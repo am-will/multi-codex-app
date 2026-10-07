@@ -14,7 +14,7 @@ Install the official desktop app first. On **macOS or Linux**:
 curl -fsSL https://raw.githubusercontent.com/am-will/multi-codex-app/main/install.sh | sh
 ```
 
-The setup wizard asks how many profiles you want **in total**, including Primary, then lets you name every profile, choose each icon color, and review the result before installing a permanent CLI and helper. Released macOS binaries need no Node, Go, Swift, or Xcode.
+The setup wizard first scans the existing installation and prints a report of Codex Desktop, helper integration, saved profiles, installed launcher names, and actual icon colors. Missing launchers, changed names/colors, and leftover managed or Edi launchers are shown before the first question. Then it asks how many profiles you want **in total**, including Primary, then lets you name every profile, choose each icon color, and review the result before installing a permanent CLI and helper. Released macOS binaries need no Node, Go, Swift, or Xcode.
 
 Unattended installation:
 
@@ -42,6 +42,10 @@ Use the desktop executable, not the Codex CLI. Store-managed installs may need a
 Installers verify release SHA-256 checksums before running the binary. Checksums protect download integrity and are published alongside artifacts. Releases are not notarized or developer-certificate signed. Do not disable OS security protections to run this tool. Inspect [install.sh](install.sh), [install.ps1](install.ps1), or build the source yourself.
 
 ## Use
+
+![Terminal wizard installation report](docs/wizard.png)
+
+The terminal wizard uses section headings, colored icon swatches, and a final review. Choose colors by name or number (1–5). `NO_COLOR` and `TERM=dumb` disable ANSI styling; redirected reports use plain text. The installation scan reads launcher metadata and icon artwork without modifying existing settings. Windows reads shortcut metadata through PowerShell; Linux reads desktop entries.
 
 ```sh
 multi-codex-app wizard            # count, names, colors, Dock pins, review

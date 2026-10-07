@@ -130,10 +130,8 @@ func setup(args []string, add bool) error {
 	}
 	root := stateRoot()
 	c, e := readConfig(root)
-	if e != nil && !errors.Is(e, os.ErrNotExist) {
-		return e
-	}
-	fresh := errors.Is(e, os.ErrNotExist)
+	configErr := e
+	fresh := errors.Is(configErr, os.ErrNotExist)
 	if fresh {
 		c.Version = 1
 	}
@@ -141,12 +139,20 @@ func setup(args []string, add bool) error {
 	if *n == 0 || *forceWizard {
 		wizard, e = openWizard()
 		if e != nil {
+			display := &wizardPrompt{out: os.Stdout}
+			display.banner()
+			reportCurrentInstallation(display, root, c, *app)
 			return e
 		}
 		defer wizard.close()
-		fmt.Fprintln(wizard.out, "Multi Codex setup wizard")
+		wizard.banner()
+		reportCurrentInstallation(wizard, root, c, *app)
+	}
+	if configErr != nil && !fresh {
+		return fmt.Errorf("cannot use saved configuration: %w", configErr)
 	}
 	if *n == 0 {
+		wizard.section("02", "CHOOSE YOUR PROFILE COUNT")
 		question := "How many Codex profiles in total?"
 		def := 2
 		if !fresh {

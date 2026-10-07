@@ -1,10 +1,10 @@
-Setup wizard, named launchers, and five profile icon colors.
+A polished terminal wizard with an installation report before the first question.
 
-- `wizard` (also the default command) guides you through profile count, names, icon colors, Dock pins, and a final review. Guided `add` customizes only new profiles; commands with `--count` remain unattended.
-- `rename ID NAME` updates Spotlight/Raycast, Dock launcher, helper menu, and chooser names while preserving profile IDs and sign-ins.
-- macOS launchers now live directly in `~/Applications`, making additional profiles discoverable. Existing Dock pin positions are migrated; Edi launcher originals are kept as recoverable backups.
-- `icons` lists white, yellow, blue, purple, and teal. `icon ID COLOR` changes one profile and persists through updates. Dark backgrounds use a white OpenAI mark; white/yellow use dark lines.
-- Colored icons appear in the existing macOS helper menu and chooser, plus OS launcher icons. Windows/Linux icon adapters remain experimental.
-- Conflicting or filesystem-unsafe launcher names are rejected without replacing unrelated apps.
+- Scans the existing Codex app, helper files, saved profiles, and OS launchers before asking for changes.
+- Reports actual launcher names and icon colors read from installed PNG/ICO/ICNS artwork; highlights missing launchers and differences from saved settings.
+- Identifies leftover managed and Edi launchers separately.
+- Adds a framed header, clear sections, colored icon swatches, and cleaner prompts. Colors can be selected by name or number 1–5.
+- Respects NO_COLOR, dumb terminals, and redirected output.
+- Keeps profile names, colors, sign-ins, and data during installation and updates.
 
-Credit to Edi Hasaj for the original independent-profile methodology. OpenAI owns the Blossom mark. Read README.md for platform limitations and authentication verification status.
+Windows/Linux desktop integration remains experimental. Credit to Edi Hasaj for the original independent-profile methodology.

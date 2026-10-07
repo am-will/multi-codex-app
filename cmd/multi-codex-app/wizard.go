@@ -28,7 +28,8 @@ func openWizard() (*wizardPrompt, error) {
 	return &wizardPrompt{reader: bufio.NewReader(terminal), out: terminal, close: terminal.Close}, nil
 }
 func (w *wizardPrompt) ask(question, def string) (string, error) {
-	fmt.Fprintf(w.out, "%s [%s]: ", question, def)
+	s := styleFor(w.out)
+	fmt.Fprintf(w.out, "\n     %s %s\n     %s ", s.paint("1", question), s.dim("["+terminalText(def)+"]"), s.accent("›"))
 	line, e := w.reader.ReadString('\n')
 	if e != nil {
 		return "", errors.New("wizard stopped before an answer was received; settings were not applied")
@@ -72,10 +73,10 @@ func (w *wizardPrompt) yesNo(question string, def bool) (bool, error) {
 	}
 }
 func (w *wizardPrompt) appearance(c *Config, first int) error {
-	fmt.Fprintln(w.out, "\nName and color each profile. Press Enter to keep the shown value.")
-	fmt.Fprintln(w.out, "Icon colors: white, yellow, blue, purple, teal.")
+	w.section("03", "MAKE EACH PROFILE YOURS")
+	w.palette()
 	for i := first; i < len(c.Profiles); i++ {
-		fmt.Fprintf(w.out, "\nProfile %s\n", c.Profiles[i].ID)
+		fmt.Fprintf(w.out, "\n     %s\n", styleFor(w.out).accent("PROFILE "+c.Profiles[i].ID))
 		for {
 			name, e := w.ask("Name", c.Profiles[i].Name)
 			if e != nil {
@@ -90,11 +91,14 @@ func (w *wizardPrompt) appearance(c *Config, first int) error {
 			fmt.Fprintln(w.out, e)
 		}
 		for {
-			color, e := w.ask("Icon color", iconColor(c.Profiles[i]))
+			color, e := w.ask("Icon color (name or 1–5)", iconColor(c.Profiles[i]))
 			if e != nil {
 				return e
 			}
 			color = strings.ToLower(color)
+			if n, err := strconv.Atoi(color); err == nil && n >= 1 && n <= len(iconPalettes()) {
+				color = iconPalettes()[n-1].Name
+			}
 			if validIconColor(color) {
 				c.Profiles[i].IconColor = color
 				break
@@ -105,13 +109,18 @@ func (w *wizardPrompt) appearance(c *Config, first int) error {
 	return nil
 }
 func (w *wizardPrompt) review(c Config, pin bool) (bool, error) {
-	fmt.Fprintln(w.out, "\nYour Codex profiles:")
+	w.section("04", "READY TO APPLY")
+	s := styleFor(w.out)
 	for _, p := range c.Profiles {
-		fmt.Fprintf(w.out, "  %s  %-28s %s\n", p.ID, launcherName(p.Name), iconColor(p))
+		fmt.Fprintf(w.out, "     %s  %s  %s\n", s.dim("#"+p.ID), s.paint("1", launcherName(p.Name)), s.icon(iconColor(p)))
 	}
 	if runtime.GOOS == "darwin" {
-		fmt.Fprintf(w.out, "Add Dock pins: %t\n", pin)
+		value := "no"
+		if pin {
+			value = "yes"
+		}
+		fmt.Fprintf(w.out, "\n     Dock pins: %s\n", s.accent(value))
 	}
-	fmt.Fprintln(w.out, "Existing profile sign-ins and data are retained.")
+	fmt.Fprintln(w.out, s.dim("     Existing sign-ins and profile data are retained."))
 	return w.yesNo("Apply these settings?", true)
 }

@@ -62,3 +62,21 @@ func TestWizardAddOnlyEditsNewProfilesAndCanCancel(t *testing.T) {
 		t.Fatal("EOF treated as approval")
 	}
 }
+
+func TestWizardAcceptsNumberedIconChoices(t *testing.T) {
+	root := t.TempDir()
+	c := Config{}
+	if e := ensureProfiles(&c, 3, root, root); e != nil {
+		t.Fatal(e)
+	}
+	var out bytes.Buffer
+	w := wizardPrompt{reader: bufio.NewReader(strings.NewReader("\n1\n\n2\n\n3\n")), out: &out}
+	if e := w.appearance(&c, 0); e != nil {
+		t.Fatal(e)
+	}
+	for i, color := range []string{"white", "yellow", "blue"} {
+		if c.Profiles[i].IconColor != color {
+			t.Fatal("wrong numbered color", c.Profiles)
+		}
+	}
+}
