@@ -2,6 +2,8 @@
 
 Independent Codex desktop profiles, numbered launchers, and a connection chooser.
 
+![Native macOS connection chooser](docs/chooser.png)
+
 **Methodology credit: [Edi Hasaj](https://edihasaj.com)** and his guide, **[How to Run Two Codex Accounts on macOS with Separate Profiles](https://edihasaj.com/posts/two-codex-accounts-two-dock-icons-macos)**. This project builds on his `CODEX_HOME` plus Electron user-data-directory approach with a permanent installer, more profiles, and OAuth routing. It is an independent community project; no OpenAI or Edi endorsement is implied. Edi's installer code is not redistributed.
 
 ## Install

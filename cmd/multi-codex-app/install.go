@@ -172,7 +172,7 @@ func installMac(root string, c *Config, dock bool, home string) error {
 	label := "gui/" + strconv.Itoa(os.Getuid()) + "/" + helperID
 	// Only our helper is stopped for updates. Existing Codex sessions remain alive.
 	_ = exec.Command("launchctl", "bootout", label).Run()
-	body := `<?xml version="1.0"?><plist version="1.0"><dict><key>Label</key><string>` + helperID + `</string><key>ProgramArguments</key><array><string>` + plistEscape(helper) + `</string></array><key>RunAtLoad</key><true/><key>ProcessType</key><string>Interactive</string></dict></plist>`
+	body := `<?xml version="1.0"?><plist version="1.0"><dict><key>Label</key><string>` + helperID + `</string><key>ProgramArguments</key><array><string>` + plistEscape(helper) + `</string></array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ProcessType</key><string>Interactive</string></dict></plist>`
 	if e = atomicWrite(agent, []byte(body), 0644); e != nil {
 		return e
 	}

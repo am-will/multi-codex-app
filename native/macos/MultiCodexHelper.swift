@@ -74,12 +74,13 @@ final class ProfileButton: NSButton {
         color.withAlphaComponent(available ? 0.15 : 0.07).setFill(); NSBezierPath(roundedRect: iconRect, xRadius: 9, yRadius: 9).fill()
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 15, weight: .semibold), .foregroundColor: available ? color : NSColor.tertiaryLabelColor]
         let number = NSAttributedString(string: profile.id, attributes: attrs); let size = number.size(); number.draw(at: NSPoint(x: iconRect.midX - size.width / 2, y: iconRect.midY - size.height / 2))
-        NSAttributedString(string: profile.name, attributes: [.font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: available ? NSColor.labelColor : NSColor.secondaryLabelColor]).draw(at: NSPoint(x: 60, y: 33))
-        NSAttributedString(string: available ? "Running on this Mac" : "Open this profile to connect", attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]).draw(at: NSPoint(x: 60, y: 16))
+        let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
+        NSAttributedString(string: profile.name, attributes: [.font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: available ? NSColor.labelColor : NSColor.secondaryLabelColor, .paragraphStyle: paragraph]).draw(in: NSRect(x: 60, y: 16, width: max(0, bounds.width - 110), height: 20))
+        NSAttributedString(string: available ? "Running on this Mac" : "Open this profile to connect", attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]).draw(at: NSPoint(x: 60, y: 36))
         let circle = NSRect(x: bounds.width - 34, y: 24, width: 16, height: 16)
         if selected {
             NSColor.controlAccentColor.setFill(); NSBezierPath(ovalIn: circle).fill()
-            NSColor.white.setStroke(); let check = NSBezierPath(); check.move(to: NSPoint(x: circle.minX + 4, y: circle.midY)); check.line(to: NSPoint(x: circle.minX + 7, y: circle.minY + 5)); check.line(to: NSPoint(x: circle.maxX - 3, y: circle.maxY - 4)); check.lineWidth = 1.7; check.stroke()
+            NSColor.white.setStroke(); let check = NSBezierPath(); check.move(to: NSPoint(x: circle.minX + 4, y: circle.midY)); check.line(to: NSPoint(x: circle.minX + 7, y: circle.minY + 11)); check.line(to: NSPoint(x: circle.maxX - 3, y: circle.minY + 5)); check.lineWidth = 1.7; check.stroke()
         } else { NSColor.tertiaryLabelColor.setStroke(); NSBezierPath(ovalIn: circle).stroke() }
         if NSApp.keyWindow?.firstResponder === self { NSColor.keyboardFocusIndicatorColor.setStroke(); let focus = NSBezierPath(roundedRect: bounds.insetBy(dx: 3, dy: 3), xRadius: 10, yRadius: 10); focus.lineWidth = 2; focus.stroke() }
     }
@@ -229,6 +230,12 @@ if args.count==3 && ["--focus","--deliver"].contains(args[1]) {
 let lockPath = rootPath() + "/helper.lock"
 let lockFD = open(lockPath, O_CREAT | O_RDWR, mode_t(0600))
 if !args.contains("--preview") && Bundle.main.object(forInfoDictionaryKey: "MultiCodexProfileID") == nil {
-    guard lockFD >= 0, flock(lockFD, LOCK_EX | LOCK_NB) == 0 else { exit(0) }
+    guard lockFD >= 0 else { exit(1) }
+    var acquired = false
+    for _ in 0..<30 {
+        if flock(lockFD, LOCK_EX | LOCK_NB) == 0 { acquired = true; break }
+        usleep(100_000)
+    }
+    guard acquired else { exit(0) }
 }
 let app=NSApplication.shared;app.setActivationPolicy(.accessory);let delegate=Helper();app.delegate=delegate;app.run()
