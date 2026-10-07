@@ -77,33 +77,8 @@ func (w *wizardPrompt) appearance(c *Config, first int) error {
 	w.palette()
 	for i := first; i < len(c.Profiles); i++ {
 		fmt.Fprintf(w.out, "\n     %s\n", styleFor(w.out).accent("PROFILE "+c.Profiles[i].ID))
-		for {
-			name, e := w.ask("Name", c.Profiles[i].Name)
-			if e != nil {
-				return e
-			}
-			previous := c.Profiles[i].Name
-			c.Profiles[i].Name = name
-			if e = validateNames(c.Profiles); e == nil {
-				break
-			}
-			c.Profiles[i].Name = previous
-			fmt.Fprintln(w.out, e)
-		}
-		for {
-			color, e := w.ask("Icon color (name or 1–5)", iconColor(c.Profiles[i]))
-			if e != nil {
-				return e
-			}
-			color = strings.ToLower(color)
-			if n, err := strconv.Atoi(color); err == nil && n >= 1 && n <= len(iconPalettes()) {
-				color = iconPalettes()[n-1].Name
-			}
-			if validIconColor(color) {
-				c.Profiles[i].IconColor = color
-				break
-			}
-			fmt.Fprintln(w.out, "Choose white, yellow, blue, purple, or teal.")
+		if e := w.editFields(c, i, true, true); e != nil {
+			return e
 		}
 	}
 	return nil
@@ -123,4 +98,41 @@ func (w *wizardPrompt) review(c Config, pin bool) (bool, error) {
 	}
 	fmt.Fprintln(w.out, s.dim("     Existing sign-ins and profile data are retained."))
 	return w.yesNo("Apply these settings?", true)
+}
+
+func (w *wizardPrompt) editFields(c *Config, index int, name, color bool) error {
+	if name {
+		for {
+			name, e := w.ask("Name", c.Profiles[index].Name)
+			if e != nil {
+				return e
+			}
+			previous := c.Profiles[index].Name
+			c.Profiles[index].Name = name
+			if e = validateNames(c.Profiles); e == nil {
+				break
+			}
+			c.Profiles[index].Name = previous
+			fmt.Fprintln(w.out, e)
+		}
+	}
+	if color {
+
+		for {
+			color, e := w.ask("Icon color (name or 1–5)", iconColor(c.Profiles[index]))
+			if e != nil {
+				return e
+			}
+			color = strings.ToLower(color)
+			if n, err := strconv.Atoi(color); err == nil && n >= 1 && n <= len(iconPalettes()) {
+				color = iconPalettes()[n-1].Name
+			}
+			if validIconColor(color) {
+				c.Profiles[index].IconColor = color
+				break
+			}
+			fmt.Fprintln(w.out, "Choose white, yellow, blue, purple, or teal.")
+		}
+	}
+	return nil
 }

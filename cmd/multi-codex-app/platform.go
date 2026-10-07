@@ -161,6 +161,10 @@ func callback(raw string) error {
 		}
 	}
 	p, e := profile(c, id)
+	if !(u.Host == "connector" && u.Path == "/oauth_callback") {
+		p = primaryProfile(c)
+		e = nil
+	}
 	if e != nil {
 		return errors.New("invalid callback destination")
 	}

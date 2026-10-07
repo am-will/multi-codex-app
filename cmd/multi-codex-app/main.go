@@ -45,7 +45,13 @@ func run(args []string) error {
 		if e != nil {
 			return e
 		}
-		for _, p := range c.Profiles {
+		entries := c.Profiles
+		if len(args) == 2 && args[1] == "--removed" {
+			entries = c.RemovedProfiles
+		} else if len(args) != 1 {
+			return errors.New("usage: multi-codex-app list [--removed]")
+		}
+		for _, p := range entries {
 			fmt.Printf("%s  %-24s  %s\n", p.ID, p.Name, iconColor(p))
 		}
 		return nil
@@ -67,6 +73,16 @@ func run(args []string) error {
 			return errors.New("usage: multi-codex-app rename ID NAME")
 		}
 		return renameProfile(args[1], args[2])
+	case "restore":
+		if len(args) != 2 {
+			return errors.New("usage: multi-codex-app restore ID")
+		}
+		return restoreProfile(args[1])
+	case "remove":
+		if len(args) != 2 {
+			return errors.New("usage: multi-codex-app remove ID")
+		}
+		return removeProfile(args[1])
 	case "icons":
 		listIcons()
 		return nil
@@ -99,9 +115,11 @@ func run(args []string) error {
 
 const help = `multi-codex-app — independent Codex desktop profiles
 
-  wizard                                    Guided count, names, colors, and launchers
+  wizard                                    Setup, edit a profile, or add/remove one
   setup [--count N] [--app PATH] [--no-dock]  Install or refresh; wizard without N
   add [--count N]                            Add N more profiles (guided without N)
+  remove ID                                 Remove one launcher; retain profile data
+  restore ID                                Restore a removed profile and its data
   list                                      Show profile IDs, names, and icon colors
   launch ID                                 Open or focus one profile
   rename ID NAME                            Rename picker and OS launcher
@@ -151,11 +169,27 @@ func setup(args []string, add bool) error {
 	if configErr != nil && !fresh {
 		return fmt.Errorf("cannot use saved configuration: %w", configErr)
 	}
+	if wizard != nil && !add && *n == 0 {
+		action, err := wizard.managementAction(c)
+		if err != nil {
+			return err
+		}
+		switch action {
+		case "edit":
+			return wizard.editExisting(stateRoot(), c)
+		case "add":
+			return wizard.addSingle(stateRoot(), c, *app, !*noDock)
+		case "remove":
+			return wizard.removeExisting(stateRoot(), c)
+		case "quit":
+			return nil
+		}
+	}
 	if *n == 0 {
 		wizard.section("02", "CHOOSE YOUR PROFILE COUNT")
 		question := "How many Codex profiles in total?"
 		def := 2
-		if !fresh {
+		if !fresh && len(c.Profiles) > 0 {
 			def = len(c.Profiles)
 		}
 		if add {
@@ -232,11 +266,18 @@ func setup(args []string, add bool) error {
 			return nil
 		}
 	}
+	return persistInstallation(root, &c, !*noDock)
+}
+func persistInstallation(root string, c *Config, pin bool, onlyIDs ...string) error {
 	cliName := "multi-codex-app"
 	if runtime.GOOS == "windows" {
 		cliName += ".exe"
 	}
 	c.CLIPath = filepath.Join(root, "bin", cliName)
+	if e := validateConfig(*c); e != nil {
+		return e
+	}
+	var e error
 	self, e := os.Executable()
 	if e != nil {
 		return e
@@ -261,13 +302,13 @@ func setup(args []string, add bool) error {
 		}
 	}
 	// Save before wiring launchers: all helpers use this single manifest.
-	if e = saveConfig(root, c); e != nil {
+	if e = saveConfig(root, *c); e != nil {
 		return e
 	}
-	if e = installIntegration(root, &c, !*noDock); e != nil {
+	if e = installIntegration(root, c, pin, onlyIDs...); e != nil {
 		return e
 	}
-	if e = saveConfig(root, c); e != nil {
+	if e = saveConfig(root, *c); e != nil {
 		return e
 	}
 	fmt.Printf("Installed %d profiles. Your saved profile data is retained.\n", len(c.Profiles))
@@ -279,6 +320,9 @@ func update() error {
 	c, e := readConfig(stateRoot())
 	if e != nil {
 		return e
+	}
+	if len(c.Profiles) == 0 {
+		return errors.New("no active profiles; run wizard to add a profile before updating integration")
 	}
 	script := "install.sh"
 	shell := "sh"

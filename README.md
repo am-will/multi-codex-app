@@ -48,8 +48,9 @@ Installers verify release SHA-256 checksums before running the binary. Checksums
 The terminal wizard uses section headings, colored icon swatches, and a final review. Choose colors by name or number (1–5). `NO_COLOR` and `TERM=dumb` disable ANSI styling; redirected reports use plain text. The installation scan reads launcher metadata and icon artwork without modifying existing settings. Windows reads shortcut metadata through PowerShell; Linux reads desktop entries.
 
 ```sh
-multi-codex-app wizard            # count, names, colors, Dock pins, review
+multi-codex-app wizard            # report, then setup / edit / add-remove picker
 multi-codex-app list
+multi-codex-app list --removed    # retained profiles available to restore
 multi-codex-app launch 2
 multi-codex-app rename 2 Work
 multi-codex-app rename 3 "Codex (Personal)"
@@ -61,12 +62,24 @@ multi-codex-app add --count 2     # adds two profiles
 multi-codex-app setup --count 6   # refreshes six total profiles
 multi-codex-app update
 multi-codex-app doctor
+multi-codex-app remove 4          # removes this launcher; retains its data
+multi-codex-app restore 4         # restores the same ID and saved data
 multi-codex-app uninstall
 ```
 
-Running `multi-codex-app` without arguments, or `setup` without `--count`, opens the wizard. Run `wizard` again any time to change existing names/colors or add more profiles by choosing a larger total. `add` without `--count` guides you through the new profiles only; `add --count N` uses default names/colors for unattended additions. `setup --count N` and `update` retain existing choices without prompting.
+Running `multi-codex-app` without arguments, or `setup` without `--count`, opens the wizard. After the installation report, the wizard offers three paths:
 
-Setup never removes profiles or replaces their authentication. Sign into each new profile separately. Names appear in the chooser, helper menu, and OS launcher. `rename 2 Work` creates **Codex Work**; a name beginning with Codex is used as written, so `rename 2 "Codex (My Company)"` creates **Codex (My Company)**. IDs, data directories, and sign-ins stay attached to the same profile. Duplicate launcher names and names containing filesystem-reserved characters are rejected.
+1. **Full setup:** choose a total count, then customize the names and colors.
+2. **Edit one existing profile:** pick its number from the list, then change its name, color, or both. Other launchers are left in place.
+3. **Add/remove one:** add a profile with an unused number, name, and color, or pick one to remove. Each operation has its own review.
+
+Run `wizard` again any time to manage individual profiles. Editing or adding one updates only that launcher. Existing profile numbers are permanent identifiers; new numbers can be chosen explicitly and cannot reuse retained data.
+
+`add` without `--count` guides you through the new profiles only; `add --count N` uses default names/colors for unattended additions. `setup --count N` and `update` retain existing choices without prompting.
+
+`remove ID` removes that profile from the helper and retires its managed launcher/Dock pin. It keeps sign-ins, chats, configuration, and data directories, and records the removed identity under `removedProfiles` in the manifest. It does not close an already running Codex window or delete the official Codex app. Removing the final profile also uninstalls helper integration. `restore ID` reinstates the same saved profile; its name must not conflict with an active launcher. `list --removed` shows retained IDs. Removed IDs and existing profile directories are reserved to prevent a new instance from inheriting another account’s state.
+
+Full setup never removes profiles or replaces their authentication. Sign into each new profile separately. Names appear in the chooser, helper menu, and OS launcher. `rename 2 Work` creates **Codex Work**; a name beginning with Codex is used as written, so `rename 2 "Codex (My Company)"` creates **Codex (My Company)**. IDs, data directories, and sign-ins stay attached to the same profile. Duplicate launcher names and names containing filesystem-reserved characters are rejected.
 
 On macOS the installer creates named apps directly in `~/Applications` and registers them with Launch Services for Spotlight and Raycast. Earlier numbered launchers are migrated, preserving existing Dock pin positions. Raycast can take a moment to refresh its application index; add `~/Applications` to its application search scope if needed. New launchers are pinned to the Dock by default. Use `--no-dock` to skip pins. Running Codex windows may still group under the official icon: separate launcher pins cannot change the signed app's running identity. Windows creates Start-menu shortcuts; Linux creates desktop entries. Pin those manually using your OS.
 

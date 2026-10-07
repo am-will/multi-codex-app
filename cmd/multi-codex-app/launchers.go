@@ -138,7 +138,7 @@ func retireLauncher(path, root, kind string) (string, error) {
 	}
 	return target, nil
 }
-func installMacLaunchers(root string, c *Config, home, helper string, pin bool) error {
+func installMacLaunchers(root string, c *Config, home, helper string, pin bool, onlyIDs ...string) error {
 	if e := validateNames(c.Profiles); e != nil {
 		return e
 	}
@@ -151,6 +151,9 @@ func installMacLaunchers(root string, c *Config, home, helper string, pin bool) 
 	}
 	// Check every destination before changing an existing launcher or its Dock pin.
 	for _, p := range c.Profiles {
+		if !includesProfile(onlyIDs, p.ID) {
+			continue
+		}
 		target := filepath.Join(apps, launcherName(p.Name)+".app")
 		if _, e := os.Lstat(target); e == nil && !ownsLauncher(target, root, p.ID) && !legacyLauncher(target) {
 			return fmt.Errorf("%s already exists and belongs to another app; choose a different name", target)
@@ -163,6 +166,9 @@ func installMacLaunchers(root string, c *Config, home, helper string, pin bool) 
 	defer os.RemoveAll(stage)
 	staged := map[string]string{}
 	for _, p := range c.Profiles {
+		if !includesProfile(onlyIDs, p.ID) {
+			continue
+		}
 		path := filepath.Join(stage, p.ID+".app")
 		if e = extractAsset("macos/MultiCodexHelper", filepath.Join(path, "Contents", "MacOS", "MultiCodexHelper"), 0755); e != nil {
 			return e
@@ -187,6 +193,9 @@ func installMacLaunchers(root string, c *Config, home, helper string, pin bool) 
 	}
 	var destinations, relocations []string
 	for i, p := range c.Profiles {
+		if !includesProfile(onlyIDs, p.ID) {
+			continue
+		}
 		target := filepath.Join(apps, launcherName(p.Name)+".app")
 		// Repair stale Dock bookmarks even when earlier numbered wrappers were retired.
 		numbered := filepath.Join(apps, "Multi Codex Profiles", "Codex Profile "+p.ID+".app")
@@ -264,26 +273,52 @@ func applyAppearance(root string, c *Config) error {
 	if e := validateConfig(*c); e != nil {
 		return e
 	}
+	previous, e := readConfig(root)
+	if e != nil {
+		return e
+	}
+	changed := changedProfileIDs(previous, *c)
+	if len(changed) == 0 {
+		return nil
+	}
 	if e := installIcons(root); e != nil {
 		return e
 	}
 	home, _ := os.UserHomeDir()
 	if runtime.GOOS == "darwin" {
-		if e := installMacLaunchers(root, c, home, helperPath(root), false); e != nil {
+		if e := installMacLaunchers(root, c, home, helperPath(root), false, changed...); e != nil {
 			return e
 		}
 		return runQuiet(helperPath(root), "--refresh-icons")
 	}
-	previous, e := readConfig(root)
-	if e != nil {
-		return e
-	}
 	if e = saveConfig(root, *c); e != nil {
 		return e
 	}
-	if e = installIntegration(root, c, false); e != nil {
+	if e = installIntegration(root, c, false, changed...); e != nil {
 		_ = saveConfig(root, previous)
 		return e
 	}
 	return saveConfig(root, *c)
+}
+
+func includesProfile(ids []string, id string) bool {
+	if len(ids) == 0 {
+		return true
+	}
+	for _, candidate := range ids {
+		if candidate == id {
+			return true
+		}
+	}
+	return false
+}
+func changedProfileIDs(before, after Config) []string {
+	var changed []string
+	for _, p := range after.Profiles {
+		old, e := profile(before, p.ID)
+		if e != nil || old.Name != p.Name || iconColor(old) != iconColor(p) {
+			changed = append(changed, p.ID)
+		}
+	}
+	return changed
 }

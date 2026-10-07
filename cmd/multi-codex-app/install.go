@@ -21,14 +21,14 @@ func extractAsset(asset, path string, mode os.FileMode) error {
 	}
 	return atomicWrite(path, b, mode)
 }
-func installIntegration(root string, c *Config, dock bool) error {
+func installIntegration(root string, c *Config, dock bool, onlyIDs ...string) error {
 	home, _ := os.UserHomeDir()
 	if e := installIcons(root); e != nil {
 		return e
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		return installMac(root, c, dock, home)
+		return installMac(root, c, dock, home, onlyIDs...)
 	case "linux":
 		if e := extractAsset("linux/chooser.py", filepath.Join(root, "chooser.py"), 0600); e != nil {
 			return e
@@ -39,6 +39,18 @@ func installIntegration(root string, c *Config, dock bool) error {
 		}
 		dir := filepath.Join(data, "applications")
 		for _, p := range c.Profiles {
+			if !includesProfile(onlyIDs, p.ID) {
+				continue
+			}
+			target := filepath.Join(dir, "multi-codex-profile-"+p.ID+".desktop")
+			if _, err := os.Lstat(target); err == nil {
+				expected := desktopQuote(c.CLIPath) + " --root " + desktopQuote(root) + " launch " + p.ID
+				if desktopValues(target)["Exec"] != expected {
+					return errors.New("launcher belongs to another installation; choose an unused profile number")
+				}
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
 			body := "[Desktop Entry]\nType=Application\nName=" + launcherName(p.Name) + "\nComment=Independent Codex profile\nExec=" + desktopQuote(c.CLIPath) + " --root " + desktopQuote(root) + " launch " + p.ID + "\nIcon=" + iconFile(root, p, "png") + "\nTerminal=false\nCategories=Development;\n"
 			if e := atomicWrite(filepath.Join(dir, "multi-codex-profile-"+p.ID+".desktop"), []byte(body), 0755); e != nil {
 				return e
@@ -66,7 +78,14 @@ func installIntegration(root string, c *Config, dock bool) error {
 		if e := extractAsset("windows/integrate.ps1", filepath.Join(root, "integrate.ps1"), 0600); e != nil {
 			return e
 		}
-		adapterConfig, e := writeIconAdapterConfig(root, *c)
+		subset := *c
+		subset.Profiles = nil
+		for _, p := range c.Profiles {
+			if includesProfile(onlyIDs, p.ID) {
+				subset.Profiles = append(subset.Profiles, p)
+			}
+		}
+		adapterConfig, e := writeIconAdapterConfig(root, subset)
 		if e != nil {
 			return e
 		}
@@ -118,9 +137,9 @@ func helperPlist(c Config, root, profileID string) string {
 		id += ".profile" + profileID
 		extra = "<key>MultiCodexProfileID</key><string>" + profileID + "</string>"
 	}
-	return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>` + id + `</string><key>CFBundleExecutable</key><string>MultiCodexHelper</string><key>CFBundleName</key><string>` + plistEscape(role) + `</string><key>CFBundleDisplayName</key><string>` + plistEscape(role) + `</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>0.1.3</string><key>CFBundleVersion</key><string>4</string><key>LSUIElement</key><true/><key>CFBundleIconFile</key><string>ProfileIcon.icns</string><key>NSAppleEventsUsageDescription</key><string>Route a connection to the Codex profile you choose.</string><key>MultiCodexRoot</key><string>` + plistEscape(root) + `</string><key>MultiCodexCLI</key><string>` + plistEscape(c.CLIPath) + `</string>` + extra + `</dict></plist>`
+	return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>` + id + `</string><key>CFBundleExecutable</key><string>MultiCodexHelper</string><key>CFBundleName</key><string>` + plistEscape(role) + `</string><key>CFBundleDisplayName</key><string>` + plistEscape(role) + `</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>0.2.0</string><key>CFBundleVersion</key><string>5</string><key>LSUIElement</key><true/><key>CFBundleIconFile</key><string>ProfileIcon.icns</string><key>NSAppleEventsUsageDescription</key><string>Route a connection to the Codex profile you choose.</string><key>MultiCodexRoot</key><string>` + plistEscape(root) + `</string><key>MultiCodexCLI</key><string>` + plistEscape(c.CLIPath) + `</string>` + extra + `</dict></plist>`
 }
-func installMac(root string, c *Config, dock bool, home string) error {
+func installMac(root string, c *Config, dock bool, home string, onlyIDs ...string) error {
 	// Repair private lock permissions from pre-release builds before restarting.
 	lockPath := filepath.Join(root, "helper.lock")
 	if info, err := os.Lstat(lockPath); err == nil {
@@ -206,7 +225,7 @@ func installMac(root string, c *Config, dock bool, home string) error {
 	if !ready {
 		return errors.New("helper did not become ready; run doctor, then retry setup")
 	}
-	if e = installMacLaunchers(root, c, home, helper, dock); e != nil {
+	if e = installMacLaunchers(root, c, home, helper, dock, onlyIDs...); e != nil {
 		return e
 	}
 	if e = runQuiet(helper, "--refresh-icons"); e != nil {
@@ -250,6 +269,10 @@ func uninstall() error {
 		return e
 	}
 	home, _ := os.UserHomeDir()
+	return uninstallAt(root, c, home)
+}
+func uninstallAt(root string, c Config, home string) error {
+	var e error
 	switch runtime.GOOS {
 	case "darwin":
 		_ = exec.Command("launchctl", "bootout", "gui/"+strconv.Itoa(os.Getuid())+"/"+helperID).Run()
@@ -291,9 +314,15 @@ func uninstall() error {
 			data = filepath.Join(home, ".local", "share")
 		}
 		dir := filepath.Join(data, "applications")
-		_ = os.Remove(filepath.Join(dir, "multi-codex-helper.desktop"))
+		helperEntry := filepath.Join(dir, "multi-codex-helper.desktop")
+		if desktopValues(helperEntry)["Exec"] == desktopQuote(c.CLIPath)+" --root "+desktopQuote(root)+" callback %u" {
+			_ = os.Remove(helperEntry)
+		}
 		for _, p := range c.Profiles {
-			_ = os.Remove(filepath.Join(dir, "multi-codex-profile-"+p.ID+".desktop"))
+			entry := filepath.Join(dir, "multi-codex-profile-"+p.ID+".desktop")
+			if desktopValues(entry)["Exec"] == desktopQuote(c.CLIPath)+" --root "+desktopQuote(root)+" launch "+p.ID {
+				_ = os.Remove(entry)
+			}
 		}
 	case "windows":
 		cmd := exec.Command("powershell.exe", "-NoProfile", "-File", filepath.Join(root, "integrate.ps1"), "-ConfigPath", filepath.Join(root, "config.json"), "-Uninstall")

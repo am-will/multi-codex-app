@@ -4,7 +4,7 @@ import Darwin
 
 let helperID = "io.github.am-will.multi-codex-app"
 struct Profile: Codable { let id: String; let name: String; let codexHome: String; let userDataDir: String; let iconColor: String? }
-struct Configuration: Codable { let version: Int; let appPath: String; let cliPath: String; let previousHandler: String?; let profiles: [Profile] }
+struct Configuration: Codable { let version: Int; let appPath: String; let cliPath: String; let previousHandler: String?; let profiles: [Profile]; let removedProfiles: [Profile]? }
 let iconColors = ["white", "yellow", "blue", "purple", "teal"]
 func profileIconColor(_ p: Profile) -> String {
     if let color = p.iconColor, iconColors.contains(color) { return color }
@@ -36,7 +36,9 @@ func runningInstances(_ c: Configuration) -> [String: NSRunningApplication] {
         guard let cmd = commandLine(app.processIdentifier) else { return nil }; return (app, cmd)
     }
     var result: [String: NSRunningApplication] = [:]
-    for profile in c.profiles {
+    let primary = c.profiles.first(where: { $0.id == "1" }) ?? c.removedProfiles?.first(where: { $0.id == "1" }) ?? Profile(id: "1", name: "Primary", codexHome: NSHomeDirectory() + "/.codex", userDataDir: "", iconColor: nil)
+    let candidates = c.profiles.contains(where: { $0.id == "1" }) ? c.profiles : c.profiles + [primary]
+    for profile in candidates {
         let matches = commands.filter { app, cmd in
             if profile.userDataDir.isEmpty { return !cmd.contains("--user-data-dir") && !cmd.contains("--user-data-path") }
             guard let range = cmd.range(of: "--user-data-dir=" + profile.userDataDir) else { return false }
@@ -181,7 +183,10 @@ final class Helper: NSObject, NSApplicationDelegate {
             let choice = Chooser(); chooser = choice; choice.show(c, preview: false) { [weak self] profile in
                 if let profile { self?.forward(raw, profile, c) }; self?.chooser = nil; self?.processNext()
             }
-        } else if let primary = c.profiles.first(where: { $0.id == "1" }) { forward(raw, primary, c); processNext() }
+        } else {
+            let primary = c.profiles.first(where: { $0.id == "1" }) ?? c.removedProfiles?.first(where: { $0.id == "1" }) ?? Profile(id: "1", name: "Primary", codexHome: NSHomeDirectory() + "/.codex", userDataDir: "", iconColor: nil)
+            forward(raw, primary, c); processNext()
+        }
     }
     func forward(_ raw: String, _ p: Profile, _ c: Configuration) {
         guard let app = instance(p, c) else { showError("Open \(p.name), then restart Connect from that profile."); return }

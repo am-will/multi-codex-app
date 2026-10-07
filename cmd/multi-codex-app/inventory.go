@@ -184,4 +184,7 @@ func (w *wizardPrompt) report(r installationReport) {
 func reportCurrentInstallation(w *wizardPrompt, root string, c Config, app string) {
 	home, _ := os.UserHomeDir()
 	w.report(inspectInstallation(root, c, home, runtime.GOOS, app))
+	if len(c.RemovedProfiles) > 0 {
+		fmt.Fprintf(w.out, "     %d removed profiles have retained data. Use list --removed / restore ID.\n", len(c.RemovedProfiles))
+	}
 }

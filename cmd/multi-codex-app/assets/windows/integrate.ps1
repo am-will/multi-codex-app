@@ -1,16 +1,40 @@
-param([Parameter(Mandatory=$true)][string]$ConfigPath, [switch]$Uninstall)
+param([Parameter(Mandatory=$true)][string]$ConfigPath, [switch]$Uninstall, [string]$RemoveProfileID = '')
 $ErrorActionPreference = 'Stop'
 $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 $root = Split-Path -Parent $ConfigPath
 $backup = Join-Path $root 'codex-handler-backup.reg'
 $key = 'HKCU:\Software\Classes\codex'
 $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Multi Codex'
+if ($RemoveProfileID) {
+    $shell = New-Object -ComObject WScript.Shell
+    $arguments = '--root "' + $root + '" launch ' + $RemoveProfileID
+    if (Test-Path -LiteralPath $menu) {
+        Get-ChildItem -LiteralPath $menu -Filter '*.lnk' | ForEach-Object {
+            $shortcut = $shell.CreateShortcut($_.FullName)
+            if ($shortcut.TargetPath -eq $config.cliPath -and $shortcut.Arguments -eq $arguments) {
+                $retired = Join-Path $root 'retired-launchers'
+                New-Item -ItemType Directory -Path $retired -Force | Out-Null
+                Move-Item -LiteralPath $_.FullName -Destination (Join-Path $retired (([Guid]::NewGuid().ToString()) + '.lnk'))
+            }
+        }
+    }
+    return
+}
 if ($Uninstall) {
-    if ((Test-Path $key) -and ((Get-ItemProperty "$key\shell\open\command").'(default)' -like '*multi-codex-app.exe*')) {
+    $ownedCommand = '"' + $config.cliPath + '" --root "' + $root + '" callback "%1"'
+    if ((Test-Path "$key\shell\open\command") -and ((Get-ItemProperty "$key\shell\open\command").'(default)' -eq $ownedCommand)) {
         Remove-Item -LiteralPath $key -Recurse
         if (Test-Path $backup) { & reg.exe import $backup | Out-Null; if ($LASTEXITCODE -ne 0) { throw 'Registry restore failed' } }
     }
-    if (Test-Path $menu) { Remove-Item -LiteralPath $menu -Recurse }
+    if (Test-Path -LiteralPath $menu) {
+        $shell = New-Object -ComObject WScript.Shell
+        $prefix = '--root "' + $root + '" launch '
+        Get-ChildItem -LiteralPath $menu -Filter '*.lnk' | ForEach-Object {
+            $shortcut = $shell.CreateShortcut($_.FullName)
+            if ($shortcut.TargetPath -eq $config.cliPath -and $shortcut.Arguments.StartsWith($prefix)) { Remove-Item -LiteralPath $_.FullName }
+        }
+        if (-not (Get-ChildItem -LiteralPath $menu)) { Remove-Item -LiteralPath $menu }
+    }
     return
 }
 if (-not (Test-Path (Join-Path $root 'registry-backup-made'))) {

@@ -26,7 +26,9 @@ jobs:
           }
       - name: Compile native helper and CLI
         if: runner.os == 'macOS'
-        run: sh scripts/build.sh
+        run: |
+          sh scripts/build.sh
+          go test ./...
       - name: Check Linux chooser syntax
         if: runner.os == 'Linux'
         run: python3 -m py_compile cmd/multi-codex-app/assets/linux/chooser.py

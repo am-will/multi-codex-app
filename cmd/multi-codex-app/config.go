@@ -26,6 +26,7 @@ type Config struct {
 	PreviousHandler string           `json:"previousHandler,omitempty"`
 	Profiles        []Profile        `json:"profiles"`
 	LegacyLaunchers []LauncherBackup `json:"legacyLaunchers,omitempty"`
+	RemovedProfiles []Profile        `json:"removedProfiles,omitempty"`
 }
 
 func stateRoot() string {
@@ -66,7 +67,7 @@ func validateConfig(c Config) error {
 		return errors.New("app and CLI paths must be absolute")
 	}
 	seen := map[string]bool{}
-	for _, p := range c.Profiles {
+	for _, p := range append(append([]Profile(nil), c.Profiles...), c.RemovedProfiles...) {
 		n, e := strconv.Atoi(p.ID)
 		if e != nil || n < 1 || strconv.Itoa(n) != p.ID || seen[p.ID] {
 			return errors.New("invalid or duplicate profile ID")
@@ -82,7 +83,7 @@ func validateConfig(c Config) error {
 			return errors.New("profile paths must be absolute")
 		}
 	}
-	if len(c.Profiles) == 0 {
+	if len(c.Profiles) == 0 && len(c.RemovedProfiles) == 0 {
 		return errors.New("no profiles configured")
 	}
 	return validateNames(c.Profiles)
@@ -144,41 +145,120 @@ func ensureProfiles(c *Config, count int, root, home string) error {
 	if count < len(c.Profiles) {
 		return fmt.Errorf("%d profiles already exist; setup never removes profiles", len(c.Profiles))
 	}
-	next := 1
-	for _, p := range c.Profiles {
-		n, _ := strconv.Atoi(p.ID)
-		if n >= next {
-			next = n + 1
-		}
-	}
 	for len(c.Profiles) < count {
-		id := strconv.Itoa(next)
-		p := Profile{ID: id, Name: "Profile " + id, CodexHome: filepath.Join(root, "profiles", id, "codex"), UserDataDir: filepath.Join(root, "profiles", id, "desktop")}
-		if next == 1 {
-			p.Name = "Primary"
-			p.CodexHome = filepath.Join(home, ".codex")
-			p.UserDataDir = ""
+		id, e := nextProfileID(*c, root)
+		if e != nil {
+			return e
 		}
-		if next == 2 {
-			p.Name = "Secondary"
-			legacyHome := filepath.Join(home, ".codex-work")
-			legacyData := filepath.Join(home, "Library", "Application Support", "Codex Second")
-			if runtime.GOOS == "darwin" && isDir(legacyHome) && isDir(legacyData) {
-				p.CodexHome = legacyHome
-				p.UserDataDir = legacyData
-			}
+		if e = appendProfile(c, id, root, home); e != nil {
+			return e
 		}
-		c.Profiles = append(c.Profiles, p)
-		next++
 	}
 	return nil
 }
 func isDir(p string) bool { s, e := os.Stat(p); return e == nil && s.IsDir() }
 func profile(c Config, id string) (Profile, error) {
 	for _, p := range c.Profiles {
-		if p.ID == id || strings.EqualFold(p.Name, id) {
+		if p.ID == id {
+			return p, nil
+		}
+	}
+	for _, p := range c.Profiles {
+		if strings.EqualFold(p.Name, id) {
 			return p, nil
 		}
 	}
 	return Profile{}, fmt.Errorf("profile %q not found; run multi-codex-app list", id)
+}
+
+func reservedProfileID(c Config, id, root string) bool {
+	for _, p := range append(append([]Profile(nil), c.Profiles...), c.RemovedProfiles...) {
+		if p.ID == id {
+			return true
+		}
+	}
+	_, e := os.Lstat(filepath.Join(root, "profiles", id))
+	return !errors.Is(e, os.ErrNotExist)
+}
+func nextProfileID(c Config, root string) (string, error) {
+	maxID := 0
+	for _, p := range append(append([]Profile(nil), c.Profiles...), c.RemovedProfiles...) {
+		n, _ := strconv.Atoi(p.ID)
+		if n > maxID {
+			maxID = n
+		}
+	}
+	entries, e := os.ReadDir(filepath.Join(root, "profiles"))
+	if e != nil && !errors.Is(e, os.ErrNotExist) {
+		return "", e
+	}
+	for _, entry := range entries {
+		n, _ := strconv.Atoi(entry.Name())
+		if n > maxID {
+			maxID = n
+		}
+	}
+	if maxID == int(^uint(0)>>1) {
+		return "", errors.New("no available profile number")
+	}
+	return strconv.Itoa(maxID + 1), nil
+}
+func appendProfile(c *Config, id, root, home string) error {
+	n, e := strconv.Atoi(id)
+	if e != nil || n < 1 || strconv.Itoa(n) != id {
+		return errors.New("choose a positive profile number with no leading zeros")
+	}
+	if len(c.Profiles) >= 100 {
+		return errors.New("at most 100 active profiles are supported")
+	}
+	if reservedProfileID(*c, id, root) {
+		return errors.New("that profile number is already used or retained for removed profile data")
+	}
+	p := Profile{ID: id, Name: "Profile " + id, CodexHome: filepath.Join(root, "profiles", id, "codex"), UserDataDir: filepath.Join(root, "profiles", id, "desktop")}
+	if id == "1" {
+		p.Name = "Primary"
+		p.CodexHome = filepath.Join(home, ".codex")
+		p.UserDataDir = ""
+	}
+	if id == "2" {
+		p.Name = "Secondary"
+		legacyHome := filepath.Join(home, ".codex-work")
+		legacyData := filepath.Join(home, "Library/Application Support/Codex Second")
+		if runtime.GOOS == "darwin" && isDir(legacyHome) && isDir(legacyData) {
+			p.CodexHome = legacyHome
+			p.UserDataDir = legacyData
+		}
+	}
+	base := p.Name
+	for suffix := 2; ; suffix++ {
+		collision := false
+		for _, existing := range c.Profiles {
+			if strings.EqualFold(launcherName(existing.Name), launcherName(p.Name)) {
+				collision = true
+				break
+			}
+		}
+		if !collision {
+			break
+		}
+		p.Name = fmt.Sprintf("%s (%d)", base, suffix)
+	}
+	c.Profiles = append(c.Profiles, p)
+	return nil
+}
+func archivedConfig(c Config, id string) (Config, Profile, error) {
+	p, e := profile(c, id)
+	if e != nil {
+		return c, p, e
+	}
+	c.Profiles = append([]Profile(nil), c.Profiles...)
+	c.RemovedProfiles = append([]Profile(nil), c.RemovedProfiles...)
+	for i, entry := range c.Profiles {
+		if entry.ID == p.ID {
+			c.Profiles = append(c.Profiles[:i], c.Profiles[i+1:]...)
+			break
+		}
+	}
+	c.RemovedProfiles = append(c.RemovedProfiles, p)
+	return c, p, validateConfig(c)
 }
