@@ -1,0 +1,32 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+      - run: go test ./...
+      - run: go vet ./...
+      - name: Check PowerShell syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            $errors = $null; $tokens = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count) { throw ($errors | Out-String) }
+          }
+      - name: Compile native helper and CLI
+        if: runner.os == 'macOS'
+        run: sh scripts/build.sh
+      - name: Check Linux chooser syntax
+        if: runner.os == 'Linux'
+        run: python3 -m py_compile cmd/multi-codex-app/assets/linux/chooser.py

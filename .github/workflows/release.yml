@@ -1,0 +1,71 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  mac-helper:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build universal native helper
+        run: |
+          mkdir -p dist
+          xcrun swiftc -O -target arm64-apple-macos13 native/macos/MultiCodexHelper.swift -o dist/helper-arm64
+          xcrun swiftc -O -target x86_64-apple-macos13 native/macos/MultiCodexHelper.swift -o dist/helper-amd64
+          lipo -create dist/helper-arm64 dist/helper-amd64 -output dist/MultiCodexHelper
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-mac-helper
+          path: dist/MultiCodexHelper
+  binaries:
+    needs: mac-helper
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [darwin, linux, windows]
+        arch: [arm64, amd64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-mac-helper
+          path: cmd/multi-codex-app/assets/macos
+      - name: Build and package
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist
+          binary=multi-codex-app
+          if [ "$GOOS" = windows ]; then binary=multi-codex-app.exe; fi
+          go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o "dist/$binary" ./cmd/multi-codex-app
+          cd dist
+          asset="multi-codex-app_${GOOS}_${GOARCH}"
+          if [ "$GOOS" = windows ]; then zip "$asset.zip" "$binary"; asset="$asset.zip"; else tar -czf "$asset.tar.gz" "$binary"; asset="$asset.tar.gz"; fi
+          sha256sum "$asset" > "$asset.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz*
+            dist/*.zip*
+  publish:
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: release
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/* --title "$GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md --verify-tag

@@ -1,0 +1,2 @@
+The macOS release build embeds a universal MultiCodexHelper binary here.
+Run scripts/build.sh on a Mac before building an installable macOS CLI.
