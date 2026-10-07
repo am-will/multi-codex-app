@@ -25,10 +25,28 @@ Set-Item -Path "$key\shell\open\command" -Value $command
 New-Item -ItemType Directory -Path $menu -Force | Out-Null
 $shell = New-Object -ComObject WScript.Shell
 foreach ($profile in $config.profiles) {
-    $shortcut = $shell.CreateShortcut((Join-Path $menu ('Codex Profile ' + $profile.id + '.lnk')))
+    $displayName = $profile.name.Trim()
+    if ($displayName -notmatch '^Codex[ (]') { $displayName = 'Codex ' + $displayName }
+    $destination = Join-Path $menu ($displayName + '.lnk')
+    $arguments = '--root "' + $root + '" launch ' + $profile.id
+    if (Test-Path -LiteralPath $destination) {
+        $existing = $shell.CreateShortcut($destination)
+        if ($existing.TargetPath -ne $config.cliPath -or $existing.Arguments -ne $arguments) { throw "Another shortcut already uses $displayName" }
+    }
+    # Retire earlier shortcuts for this same CLI/profile, including old numbered names.
+    Get-ChildItem -LiteralPath $menu -Filter '*.lnk' | ForEach-Object {
+        $existing = $shell.CreateShortcut($_.FullName)
+        if ($_.FullName -ne $destination -and $existing.TargetPath -eq $config.cliPath -and $existing.Arguments -eq $arguments) {
+            $retired = Join-Path $root 'retired-launchers'
+            New-Item -ItemType Directory -Path $retired -Force | Out-Null
+            Move-Item -LiteralPath $_.FullName -Destination (Join-Path $retired (([Guid]::NewGuid().ToString()) + '.lnk'))
+        }
+    }
+    $shortcut = $shell.CreateShortcut($destination)
     $shortcut.TargetPath = $config.cliPath
-    $shortcut.Arguments = '--root "' + $root + '" launch ' + $profile.id
+    $shortcut.Arguments = $arguments
     $shortcut.Description = $profile.name
+    $shortcut.IconLocation = (Join-Path $root ('icons\' + $profile.iconColor + '.ico')) + ',0'
     $shortcut.WorkingDirectory = $root
     $shortcut.Save()
 }

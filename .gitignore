@@ -1,3 +1,6 @@
 /dist/
 /cmd/multi-codex-app/assets/macos/MultiCodexHelper
 *.DS_Store
+
+__pycache__/
+*.pyc

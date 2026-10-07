@@ -12,17 +12,20 @@ import (
 )
 
 type Profile struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	CodexHome   string `json:"codexHome"`
-	UserDataDir string `json:"userDataDir"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	CodexHome    string `json:"codexHome"`
+	UserDataDir  string `json:"userDataDir"`
+	LauncherPath string `json:"launcherPath,omitempty"`
+	IconColor    string `json:"iconColor,omitempty"`
 }
 type Config struct {
-	Version         int       `json:"version"`
-	AppPath         string    `json:"appPath"`
-	CLIPath         string    `json:"cliPath"`
-	PreviousHandler string    `json:"previousHandler,omitempty"`
-	Profiles        []Profile `json:"profiles"`
+	Version         int              `json:"version"`
+	AppPath         string           `json:"appPath"`
+	CLIPath         string           `json:"cliPath"`
+	PreviousHandler string           `json:"previousHandler,omitempty"`
+	Profiles        []Profile        `json:"profiles"`
+	LegacyLaunchers []LauncherBackup `json:"legacyLaunchers,omitempty"`
 }
 
 func stateRoot() string {
@@ -69,6 +72,9 @@ func validateConfig(c Config) error {
 			return errors.New("invalid or duplicate profile ID")
 		}
 		seen[p.ID] = true
+		if p.IconColor != "" && !validIconColor(p.IconColor) {
+			return errors.New("invalid icon color; run multi-codex-app icons")
+		}
 		if strings.TrimSpace(p.Name) == "" || strings.ContainsAny(p.Name, "\r\n\x00") {
 			return errors.New("profile names must be nonempty single lines")
 		}
@@ -79,7 +85,7 @@ func validateConfig(c Config) error {
 	if len(c.Profiles) == 0 {
 		return errors.New("no profiles configured")
 	}
-	return nil
+	return validateNames(c.Profiles)
 }
 func saveConfig(root string, c Config) error {
 	if e := validateConfig(c); e != nil {

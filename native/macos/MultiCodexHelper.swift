@@ -3,8 +3,17 @@ import CoreServices
 import Darwin
 
 let helperID = "io.github.am-will.multi-codex-app"
-struct Profile: Codable { let id: String; let name: String; let codexHome: String; let userDataDir: String }
+struct Profile: Codable { let id: String; let name: String; let codexHome: String; let userDataDir: String; let iconColor: String? }
 struct Configuration: Codable { let version: Int; let appPath: String; let cliPath: String; let previousHandler: String?; let profiles: [Profile] }
+let iconColors = ["white", "yellow", "blue", "purple", "teal"]
+func profileIconColor(_ p: Profile) -> String {
+    if let color = p.iconColor, iconColors.contains(color) { return color }
+    return iconColors[max(0, (Int(p.id) ?? 1) - 1) % iconColors.count]
+}
+func profileImage(_ p: Profile, size: CGFloat) -> NSImage? {
+    guard let image = NSImage(contentsOfFile: rootPath() + "/icons/" + profileIconColor(p) + ".png") else { return nil }
+    image.size = NSSize(width: size, height: size); image.isTemplate = false; return image
+}
 func rootPath() -> String {
     ProcessInfo.processInfo.environment["MULTI_CODEX_ROOT"] ?? Bundle.main.object(forInfoDictionaryKey: "MultiCodexRoot") as? String ?? NSHomeDirectory() + "/Library/Application Support/Multi Codex"
 }
@@ -69,11 +78,7 @@ final class ProfileButton: NSButton {
         (selected ? NSColor.controlAccentColor.withAlphaComponent(0.10) : NSColor.controlBackgroundColor).setFill(); path.fill()
         (selected ? NSColor.controlAccentColor : NSColor.separatorColor.withAlphaComponent(0.6)).setStroke(); path.lineWidth = selected ? 1.6 : 1; path.stroke()
         let iconRect = NSRect(x: 16, y: 16, width: 32, height: 32)
-        let palette: [NSColor] = [.systemBlue, .systemPurple, .systemTeal, .systemOrange, .systemPink]
-        let color = palette[((Int(profile.id) ?? 1) - 1) % palette.count]
-        color.withAlphaComponent(available ? 0.15 : 0.07).setFill(); NSBezierPath(roundedRect: iconRect, xRadius: 9, yRadius: 9).fill()
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 15, weight: .semibold), .foregroundColor: available ? color : NSColor.tertiaryLabelColor]
-        let number = NSAttributedString(string: profile.id, attributes: attrs); let size = number.size(); number.draw(at: NSPoint(x: iconRect.midX - size.width / 2, y: iconRect.midY - size.height / 2))
+        profileImage(profile, size: 32)?.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: available ? 1 : 0.45, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
         let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
         NSAttributedString(string: profile.name, attributes: [.font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: available ? NSColor.labelColor : NSColor.secondaryLabelColor, .paragraphStyle: paragraph]).draw(in: NSRect(x: 60, y: 16, width: max(0, bounds.width - 110), height: 20))
         NSAttributedString(string: available ? "Running on this Mac" : "Open this profile to connect", attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]).draw(at: NSPoint(x: 60, y: 36))
@@ -151,12 +156,12 @@ final class Helper: NSObject, NSApplicationDelegate {
     func claim() { if handler() != helperID { _ = setHandler(helperID) } }
     func rebuildMenu() {
         let menu = NSMenu(); let heading = menu.addItem(withTitle: "Multi Codex", action: nil, keyEquivalent: ""); heading.isEnabled = false; menu.addItem(.separator())
-        if let c = try? configuration() { for p in c.profiles { let item = menu.addItem(withTitle: p.name, action: #selector(launchProfile(_:)), keyEquivalent: ""); item.representedObject = p.id; item.target = self } }
+        if let c = try? configuration() { for p in c.profiles { let item = menu.addItem(withTitle: p.name, action: #selector(launchProfile(_:)), keyEquivalent: ""); item.representedObject = p.id; item.target = self; item.image = profileImage(p, size: 20) } }
         menu.addItem(.separator()); menu.addItem(withTitle: "Preview Connection Chooser…", action: #selector(preview), keyEquivalent: "").target = self
         menu.addItem(withTitle: "About Multi Codex", action: #selector(about), keyEquivalent: "").target = self
         status.menu = menu
     }
-    @objc func about() { let a = NSAlert(); a.messageText = "Multi Codex"; a.informativeText = "Independent profiles and connection routing.\n\nInspired by Edi Hasaj's two-account methodology:\nedihasaj.com/posts/two-codex-accounts-two-dock-icons-macos\n\nManage profiles: multi-codex-app add / rename / update\nRemove integration: multi-codex-app uninstall"; a.runModal() }
+    @objc func about() { let a = NSAlert(); a.messageText = "Multi Codex"; a.informativeText = "Independent profiles and connection routing.\n\nInspired by Edi Hasaj's two-account methodology:\nedihasaj.com/posts/two-codex-accounts-two-dock-icons-macos\n\nManage profiles: multi-codex-app add / rename / icon / update\nRemove integration: multi-codex-app uninstall"; a.runModal() }
     @objc func launchProfile(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String, let c = try? configuration() else { return }
         let p = Process(); p.executableURL = URL(fileURLWithPath: c.cliPath); p.arguments = ["--root", rootPath(), "launch", id]; p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice; try? p.run()
@@ -184,19 +189,27 @@ final class Helper: NSObject, NSApplicationDelegate {
     }
 }
 
-func renderIcon(_ id: String, _ destination: String) throws {
-    // Build an iconset on demand without shipping Apple's or OpenAI's artwork.
-    let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString + ".iconset"); try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true); defer { try? FileManager.default.removeItem(at: temp) }
-    let palette: [NSColor] = [.systemBlue, .systemPurple, .systemTeal, .systemOrange, .systemPink]; let color = palette[((Int(id) ?? 1) - 1) % palette.count]
+func renderIcon(_ source: String, _ destination: String) throws {
+    guard let image = NSImage(contentsOfFile: source) else { throw NSError(domain: "MultiCodex", code: 6) }
+    let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString + ".iconset")
+    try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temp) }
     for size in [16,32,64,128,256,512,1024] {
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
         NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        let s = CGFloat(size); let shape = NSBezierPath(roundedRect: NSRect(x: s*0.06,y:s*0.06,width:s*0.88,height:s*0.88),xRadius:s*0.20,yRadius:s*0.20)
-        NSGradient(starting: color, ending: color.blended(withFraction: 0.35, of: .black)!)!.draw(in: shape, angle: -75)
-        let number = NSAttributedString(string:id,attributes:[.font:NSFont.systemFont(ofSize:s*0.46,weight:.bold),.foregroundColor:NSColor.white]); let ns=number.size(); number.draw(at:NSPoint(x:(s-ns.width)/2,y:(s-ns.height)/2+s*0.025)); NSGraphicsContext.restoreGraphicsState()
-        let data=rep.representation(using:.png,properties:[:])!; if size<=512 {try data.write(to:temp.appendingPathComponent("icon_\(size)x\(size).png"))};if size>=32 {let base=size/2;try data.write(to:temp.appendingPathComponent("icon_\(base)x\(base)@2x.png"))}
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: NSRect(x: 0, y: 0, width: size, height: size), from: .zero, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        let data = rep.representation(using: .png, properties: [:])!
+        if size <= 512 { try data.write(to: temp.appendingPathComponent("icon_\(size)x\(size).png")) }
+        if size >= 32 { let base = size / 2; try data.write(to: temp.appendingPathComponent("icon_\(base)x\(base)@2x.png")) }
     }
-    let p=Process();p.executableURL=URL(fileURLWithPath:"/usr/bin/iconutil");p.arguments=["-c","icns",temp.path,"-o",destination];try p.run();p.waitUntilExit();if p.terminationStatus != 0 {throw NSError(domain:"MultiCodex",code:2)}
+    let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil"); p.arguments = ["-c", "icns", temp.path, "-o", destination]
+    try p.run(); p.waitUntilExit(); if p.terminationStatus != 0 { throw NSError(domain: "MultiCodex", code: 2) }
+}
+func refreshDockIcons() throws {
+    let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/killall"); p.arguments = ["Dock"]
+    try p.run(); p.waitUntilExit()
 }
 func dockPaths(_ removing: Bool, paths: [String]) throws {
     let domain="com.apple.dock" as CFString; let key="persistent-apps" as CFString
@@ -213,10 +226,39 @@ func dockPaths(_ removing: Bool, paths: [String]) throws {
     let check=CFPreferencesCopyAppValue(key,domain) as? [[String:Any]] ?? [];guard check.count==items.count else{throw NSError(domain:"MultiCodex",code:4)}
     let p=Process();p.executableURL=URL(fileURLWithPath:"/usr/bin/killall");p.arguments=["Dock"];try p.run();p.waitUntilExit()
 }
+func relocateDockPins(_ pairs: [String]) throws {
+    guard pairs.count % 2 == 0 else { throw NSError(domain: "MultiCodex", code: 5) }
+    var replacements: [String: String] = [:]
+    for index in stride(from: 0, to: pairs.count, by: 2) {
+        replacements[URL(fileURLWithPath: pairs[index]).standardizedFileURL.path] = URL(fileURLWithPath: pairs[index + 1]).standardizedFileURL.path
+    }
+    let domain = "com.apple.dock" as CFString; let key = "persistent-apps" as CFString
+    let original = CFPreferencesCopyAppValue(key, domain) as? [[String: Any]] ?? []
+    var updated: [[String: Any]] = []; var changed = false; var seenTargets = Set<String>()
+    for var item in original {
+        if var tile = item["tile-data"] as? [String: Any], let file = tile["file-data"] as? [String: Any], let raw = file["_CFURLString"] as? String, let url = URL(string: raw), let target = replacements[url.standardizedFileURL.path] {
+            if seenTargets.contains(target) { changed = true; continue }; seenTargets.insert(target)
+            // Dock resolves its cached bookmark before file-data; remove it on relocation.
+            tile.removeValue(forKey: "book")
+            tile["file-data"] = ["_CFURLString": URL(fileURLWithPath: target).absoluteString, "_CFURLStringType": 15]
+            tile["file-label"] = URL(fileURLWithPath: target).deletingPathExtension().lastPathComponent
+            item["tile-data"] = tile; changed = true
+        }
+        updated.append(item)
+    }
+    guard changed else { return }
+    CFPreferencesSetAppValue(key, updated as CFPropertyList, domain)
+    guard CFPreferencesAppSynchronize(domain) else { throw NSError(domain: "MultiCodex", code: 3) }
+    let check = CFPreferencesCopyAppValue(key, domain) as? [[String: Any]] ?? []
+    guard check.count == updated.count else { throw NSError(domain: "MultiCodex", code: 4) }
+    let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/killall"); process.arguments = ["Dock"]; try process.run(); process.waitUntilExit()
+}
 let args=CommandLine.arguments
+if args.contains("--refresh-icons") { do { try refreshDockIcons(); exit(0) } catch { exit(1) } }
 if args.contains("--handler"){print(handler());exit(0)}
 if args.count >= 4 && args[1]=="--icon" {do{try renderIcon(args[2],args[3]);exit(0)}catch{exit(1)}}
 if args.count >= 2 && ["--pin","--unpin"].contains(args[1]) {do{try dockPaths(args[1]=="--unpin",paths:Array(args.dropFirst(2)));exit(0)}catch{exit(1)}}
+if args.count >= 2 && args[1] == "--relocate-pins" { do { try relocateDockPins(Array(args.dropFirst(2))); exit(0) } catch { exit(1) } }
 if args.contains("--restore") {do{let c=try configuration();exit(setHandler(c.previousHandler ?? "com.openai.codex")==0 ? 0:1)}catch{exit(1)}}
 if args.contains("--status") {
     do { let c=try configuration();let h=handler();print("Callback handler: \(h)");for p in c.profiles{print("\(p.id) \(p.name): \(instance(p,c).map{"running (PID \($0.processIdentifier))"} ?? "closed")")};exit(h==helperID ? 0:1) }catch{print("Configuration unavailable");exit(1)}

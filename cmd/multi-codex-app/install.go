@@ -23,6 +23,9 @@ func extractAsset(asset, path string, mode os.FileMode) error {
 }
 func installIntegration(root string, c *Config, dock bool) error {
 	home, _ := os.UserHomeDir()
+	if e := installIcons(root); e != nil {
+		return e
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		return installMac(root, c, dock, home)
@@ -36,7 +39,7 @@ func installIntegration(root string, c *Config, dock bool) error {
 		}
 		dir := filepath.Join(data, "applications")
 		for _, p := range c.Profiles {
-			body := "[Desktop Entry]\nType=Application\nName=Codex — " + p.Name + "\nComment=Independent Codex profile\nExec=" + desktopQuote(c.CLIPath) + " --root " + desktopQuote(root) + " launch " + p.ID + "\nIcon=utilities-terminal\nTerminal=false\nCategories=Development;\n"
+			body := "[Desktop Entry]\nType=Application\nName=" + launcherName(p.Name) + "\nComment=Independent Codex profile\nExec=" + desktopQuote(c.CLIPath) + " --root " + desktopQuote(root) + " launch " + p.ID + "\nIcon=" + iconFile(root, p, "png") + "\nTerminal=false\nCategories=Development;\n"
 			if e := atomicWrite(filepath.Join(dir, "multi-codex-profile-"+p.ID+".desktop"), []byte(body), 0755); e != nil {
 				return e
 			}
@@ -63,7 +66,12 @@ func installIntegration(root string, c *Config, dock bool) error {
 		if e := extractAsset("windows/integrate.ps1", filepath.Join(root, "integrate.ps1"), 0600); e != nil {
 			return e
 		}
-		cmd := exec.Command("powershell.exe", "-NoProfile", "-File", filepath.Join(root, "integrate.ps1"), "-ConfigPath", filepath.Join(root, "config.json"))
+		adapterConfig, e := writeIconAdapterConfig(root, *c)
+		if e != nil {
+			return e
+		}
+		defer os.Remove(adapterConfig)
+		cmd := exec.Command("powershell.exe", "-NoProfile", "-File", filepath.Join(root, "integrate.ps1"), "-ConfigPath", adapterConfig)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if e := cmd.Run(); e != nil {
@@ -102,11 +110,15 @@ func helperPlist(c Config, root, profileID string) string {
 	id := helperID
 	extra := "<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>Codex callback chooser</string><key>CFBundleURLSchemes</key><array><string>codex</string></array></dict></array>"
 	if profileID != "" {
-		role = "Codex Profile " + profileID
+		if p, e := profile(c, profileID); e == nil {
+			role = launcherName(p.Name)
+		} else {
+			role = "Codex Profile " + profileID
+		}
 		id += ".profile" + profileID
 		extra = "<key>MultiCodexProfileID</key><string>" + profileID + "</string>"
 	}
-	return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>` + id + `</string><key>CFBundleExecutable</key><string>MultiCodexHelper</string><key>CFBundleName</key><string>` + role + `</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>0.1.0</string><key>CFBundleVersion</key><string>1</string><key>LSUIElement</key><true/><key>CFBundleIconFile</key><string>ProfileIcon.icns</string><key>NSAppleEventsUsageDescription</key><string>Route a connection to the Codex profile you choose.</string><key>MultiCodexRoot</key><string>` + plistEscape(root) + `</string><key>MultiCodexCLI</key><string>` + plistEscape(c.CLIPath) + `</string>` + extra + `</dict></plist>`
+	return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>` + id + `</string><key>CFBundleExecutable</key><string>MultiCodexHelper</string><key>CFBundleName</key><string>` + plistEscape(role) + `</string><key>CFBundleDisplayName</key><string>` + plistEscape(role) + `</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>0.1.1</string><key>CFBundleVersion</key><string>2</string><key>LSUIElement</key><true/><key>CFBundleIconFile</key><string>ProfileIcon.icns</string><key>NSAppleEventsUsageDescription</key><string>Route a connection to the Codex profile you choose.</string><key>MultiCodexRoot</key><string>` + plistEscape(root) + `</string><key>MultiCodexCLI</key><string>` + plistEscape(c.CLIPath) + `</string>` + extra + `</dict></plist>`
 }
 func installMac(root string, c *Config, dock bool, home string) error {
 	// Repair private lock permissions from pre-release builds before restarting.
@@ -150,32 +162,6 @@ func installMac(root string, c *Config, dock bool, home string) error {
 	if e = runQuiet("/usr/bin/codesign", "--force", "--sign", "-", bundle); e != nil {
 		return e
 	}
-	launchers := filepath.Join(home, "Applications", "Multi Codex Profiles")
-	var paths []string
-	for _, p := range c.Profiles {
-		path := filepath.Join(launchers, "Codex Profile "+p.ID+".app")
-		bin := filepath.Join(path, "Contents", "MacOS", "MultiCodexHelper")
-		if e = extractAsset("macos/MultiCodexHelper", bin, 0755); e != nil {
-			return e
-		}
-		if e = atomicWrite(filepath.Join(path, "Contents", "Info.plist"), []byte(helperPlist(*c, root, p.ID)), 0644); e != nil {
-			return e
-		}
-		icons := filepath.Join(path, "Contents", "Resources", "ProfileIcon.icns")
-		if e = os.MkdirAll(filepath.Dir(icons), 0755); e != nil {
-			return e
-		}
-		if e = runQuiet(helper, "--icon", p.ID, icons); e != nil {
-			return e
-		}
-		if e = runQuiet("/usr/bin/xattr", "-cr", path); e != nil {
-			return e
-		}
-		if e = runQuiet("/usr/bin/codesign", "--force", "--sign", "-", path); e != nil {
-			return e
-		}
-		paths = append(paths, path)
-	}
 	if e = runQuiet("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", "-f", bundle); e != nil {
 		return e
 	}
@@ -195,7 +181,15 @@ func installMac(root string, c *Config, dock bool, home string) error {
 			return e
 		}
 	}
-	if e = runQuiet("launchctl", "bootstrap", "gui/"+strconv.Itoa(os.Getuid()), agent); e != nil {
+	// launchd can briefly reject bootstrap while an earlier bootout finishes.
+	for attempt := 0; attempt < 30; attempt++ {
+		e = runQuiet("launchctl", "bootstrap", "gui/"+strconv.Itoa(os.Getuid()), agent)
+		if e == nil {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if e != nil {
 		return e
 	}
 	// Wait for registration and a live supervised helper before reporting success.
@@ -212,10 +206,11 @@ func installMac(root string, c *Config, dock bool, home string) error {
 	if !ready {
 		return errors.New("helper did not become ready; run doctor, then retry setup")
 	}
-	if dock {
-		if e = runQuiet(helper, append([]string{"--pin"}, paths...)...); e != nil {
-			return e
-		}
+	if e = installMacLaunchers(root, c, home, helper, dock); e != nil {
+		return e
+	}
+	if e = runQuiet(helper, "--refresh-icons"); e != nil {
+		return e
 	}
 	return installCLILink(home, c.CLIPath)
 }
@@ -266,13 +261,24 @@ func uninstall() error {
 		_ = os.Remove(filepath.Join(home, "Library", "LaunchAgents", helperID+".plist"))
 		var paths []string
 		for _, p := range c.Profiles {
-			paths = append(paths, filepath.Join(home, "Applications", "Multi Codex Profiles", "Codex Profile "+p.ID+".app"))
+			paths = append(paths, managedLaunchers(root, home, p.ID, p.LauncherPath)...)
 		}
 		if e = runQuiet(helperPath(root), append([]string{"--unpin"}, paths...)...); e != nil {
 			return e
 		}
 		for _, p := range paths {
-			_ = os.RemoveAll(p)
+			_ = exec.Command(lsregister, "-u", p).Run()
+			if e = os.RemoveAll(p); e != nil {
+				return e
+			}
+		}
+		for _, backup := range c.LegacyLaunchers {
+			if _, err := os.Lstat(backup.Original); errors.Is(err, os.ErrNotExist) && legacyLauncher(backup.Backup) {
+				if err = os.Rename(backup.Backup, backup.Original); err != nil {
+					return err
+				}
+				_ = exec.Command(lsregister, "-f", backup.Original).Run()
+			}
 		}
 	case "linux":
 		if c.PreviousHandler != "" {

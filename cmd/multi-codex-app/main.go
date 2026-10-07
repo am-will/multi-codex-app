@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"embed"
 	"errors"
 	"flag"
@@ -11,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 )
 
 //go:embed assets
@@ -36,6 +34,8 @@ func run(args []string) error {
 		return setup(nil, false)
 	}
 	switch args[0] {
+	case "wizard":
+		return setup(append([]string{"--wizard"}, args[1:]...), false)
 	case "setup", "install":
 		return setup(args[1:], false)
 	case "add":
@@ -46,7 +46,7 @@ func run(args []string) error {
 			return e
 		}
 		for _, p := range c.Profiles {
-			fmt.Printf("%s  %s\n", p.ID, p.Name)
+			fmt.Printf("%s  %-24s  %s\n", p.ID, p.Name, iconColor(p))
 		}
 		return nil
 	case "launch":
@@ -66,20 +66,15 @@ func run(args []string) error {
 		if len(args) != 3 {
 			return errors.New("usage: multi-codex-app rename ID NAME")
 		}
-		c, e := readConfig(stateRoot())
-		if e != nil {
-			return e
+		return renameProfile(args[1], args[2])
+	case "icons":
+		listIcons()
+		return nil
+	case "icon":
+		if len(args) != 3 {
+			return errors.New("usage: multi-codex-app icon ID COLOR; run icons to see colors")
 		}
-		p, e := profile(c, args[1])
-		if e != nil {
-			return e
-		}
-		for i := range c.Profiles {
-			if c.Profiles[i].ID == p.ID {
-				c.Profiles[i].Name = args[2]
-			}
-		}
-		return saveConfig(stateRoot(), c)
+		return setIcon(args[1], args[2])
 	case "callback":
 		if len(args) != 2 {
 			return errors.New("expected one callback URL")
@@ -104,11 +99,14 @@ func run(args []string) error {
 
 const help = `multi-codex-app — independent Codex desktop profiles
 
-  setup [--count N] [--app PATH] [--no-dock]  Install or refresh; guided without N
+  wizard                                    Guided count, names, colors, and launchers
+  setup [--count N] [--app PATH] [--no-dock]  Install or refresh; wizard without N
   add [--count N]                            Add N more profiles (guided without N)
-  list                                      Show profile IDs and names
+  list                                      Show profile IDs, names, and icon colors
   launch ID                                 Open or focus one profile
-  rename ID NAME                            Change the name in the helper
+  rename ID NAME                            Rename picker and OS launcher
+  icons                                     Show the five icon colors
+  icon ID COLOR                             Change one profile icon
   update                                    Install the newest release, keeping profiles
   doctor                                    Check paths and callback routing (no tokens)
   uninstall                                 Remove integration; preserve profile data
@@ -123,6 +121,7 @@ func setup(args []string, add bool) error {
 	n := fs.Int("count", 0, "total profiles (or profiles to add)")
 	app := fs.String("app", "", "installed desktop app path")
 	noDock := fs.Bool("no-dock", false, "do not pin macOS launchers")
+	forceWizard := fs.Bool("wizard", false, "choose names and colors interactively")
 	if e := fs.Parse(args); e != nil {
 		return e
 	}
@@ -138,6 +137,15 @@ func setup(args []string, add bool) error {
 	if fresh {
 		c.Version = 1
 	}
+	var wizard *wizardPrompt
+	if *n == 0 || *forceWizard {
+		wizard, e = openWizard()
+		if e != nil {
+			return e
+		}
+		defer wizard.close()
+		fmt.Fprintln(wizard.out, "Multi Codex setup wizard")
+	}
 	if *n == 0 {
 		question := "How many Codex profiles in total?"
 		def := 2
@@ -148,7 +156,7 @@ func setup(args []string, add bool) error {
 			question = "How many additional Codex profiles?"
 			def = 1
 		}
-		*n, e = askNumber(question, def)
+		*n, e = wizard.count(question, def)
 		if e != nil {
 			return e
 		}
@@ -167,8 +175,25 @@ func setup(args []string, add bool) error {
 	if e != nil {
 		return e
 	}
+	existingCount := len(c.Profiles)
 	if e = ensureProfiles(&c, count, root, home); e != nil {
 		return e
+	}
+	if wizard != nil {
+		first := 0
+		if add {
+			first = existingCount
+		}
+		if e = wizard.appearance(&c, first); e != nil {
+			return e
+		}
+		if runtime.GOOS == "darwin" && !*noDock {
+			pin, err := wizard.yesNo("Add launcher icons to the Dock?", true)
+			if err != nil {
+				return err
+			}
+			*noDock = !pin
+		}
 	}
 	if *app != "" {
 		c.AppPath, e = filepath.Abs(*app)
@@ -178,12 +203,28 @@ func setup(args []string, add bool) error {
 	}
 	if c.AppPath == "" {
 		c.AppPath, e = detectApp()
+		if e != nil && wizard != nil {
+			c.AppPath, e = wizard.ask("Path to the installed Codex desktop app", "")
+			if e == nil {
+				c.AppPath, e = filepath.Abs(c.AppPath)
+			}
+		}
 		if e != nil {
 			return e
 		}
 	}
 	if e = checkApp(c.AppPath); e != nil {
 		return e
+	}
+	if wizard != nil {
+		apply, err := wizard.review(c, !*noDock)
+		if err != nil {
+			return err
+		}
+		if !apply {
+			fmt.Fprintln(wizard.out, "Cancelled. Settings were not applied.")
+			return nil
+		}
 	}
 	cliName := "multi-codex-app"
 	if runtime.GOOS == "windows" {
@@ -227,29 +268,6 @@ func setup(args []string, add bool) error {
 	fmt.Printf("CLI: %s\n", c.CLIPath)
 	fmt.Println("Use: multi-codex-app list / launch 2 / add / update")
 	return nil
-}
-func askNumber(question string, def int) (int, error) {
-	input := os.Stdin
-	// curl | sh owns stdin. Read interactive answers from the terminal instead.
-	if runtime.GOOS != "windows" {
-		f, e := os.Open("/dev/tty")
-		if e == nil {
-			input = f
-			defer f.Close()
-		} else {
-			return 0, errors.New("no interactive terminal; supply --count N")
-		}
-	}
-	fmt.Printf("%s [%d]: ", question, def)
-	s := bufio.NewScanner(input)
-	if !s.Scan() {
-		return 0, errors.New("no answer received; supply --count N")
-	}
-	v := strings.TrimSpace(s.Text())
-	if v == "" {
-		return def, nil
-	}
-	return strconv.Atoi(v)
 }
 func update() error {
 	c, e := readConfig(stateRoot())

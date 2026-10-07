@@ -1,6 +1,6 @@
 # multi-codex-app
 
-Independent Codex desktop profiles, numbered launchers, and a connection chooser.
+Independent Codex desktop profiles, named launchers, and a connection chooser.
 
 ![Native macOS connection chooser](docs/chooser.png)
 
@@ -14,7 +14,7 @@ Install the official desktop app first. On **macOS or Linux**:
 curl -fsSL https://raw.githubusercontent.com/am-will/multi-codex-app/main/install.sh | sh
 ```
 
-It asks how many profiles you want **in total**, including Primary, and installs a permanent CLI and helper. Released macOS binaries need no Node, Go, Swift, or Xcode.
+The setup wizard asks how many profiles you want **in total**, including Primary, then lets you name every profile, choose each icon color, and review the result before installing a permanent CLI and helper. Released macOS binaries need no Node, Go, Swift, or Xcode.
 
 Unattended installation:
 
@@ -44,9 +44,14 @@ Installers verify release SHA-256 checksums before running the binary. Checksums
 ## Use
 
 ```sh
+multi-codex-app wizard            # count, names, colors, Dock pins, review
 multi-codex-app list
 multi-codex-app launch 2
 multi-codex-app rename 2 Work
+multi-codex-app rename 3 "Codex (Personal)"
+multi-codex-app icons             # white, yellow, blue, purple, teal
+multi-codex-app icon 2 yellow     # one profile
+multi-codex-app icon 3 blue
 multi-codex-app add               # asks how many additional profiles
 multi-codex-app add --count 2     # adds two profiles
 multi-codex-app setup --count 6   # refreshes six total profiles
@@ -55,9 +60,15 @@ multi-codex-app doctor
 multi-codex-app uninstall
 ```
 
-Setup never removes profiles or replaces their authentication. Sign into each new profile separately. Names appear in the chooser and helper menu; launcher filenames use stable profile numbers.
+Running `multi-codex-app` without arguments, or `setup` without `--count`, opens the wizard. Run `wizard` again any time to change existing names/colors or add more profiles by choosing a larger total. `add` without `--count` guides you through the new profiles only; `add --count N` uses default names/colors for unattended additions. `setup --count N` and `update` retain existing choices without prompting.
 
-On macOS the installer creates colored, numbered apps in `~/Applications/Multi Codex Profiles` and pins them to the Dock. Use `--no-dock` to skip pins. Running Codex windows may still group under the official icon: separate launcher pins cannot change the signed app's running identity. Windows creates Start-menu shortcuts; Linux creates desktop entries. Pin those manually using your OS.
+Setup never removes profiles or replaces their authentication. Sign into each new profile separately. Names appear in the chooser, helper menu, and OS launcher. `rename 2 Work` creates **Codex Work**; a name beginning with Codex is used as written, so `rename 2 "Codex (My Company)"` creates **Codex (My Company)**. IDs, data directories, and sign-ins stay attached to the same profile. Duplicate launcher names and names containing filesystem-reserved characters are rejected.
+
+On macOS the installer creates named apps directly in `~/Applications` and registers them with Launch Services for Spotlight and Raycast. Earlier numbered launchers are migrated, preserving existing Dock pin positions. Raycast can take a moment to refresh its application index; add `~/Applications` to its application search scope if needed. New launchers are pinned to the Dock by default. Use `--no-dock` to skip pins. Running Codex windows may still group under the official icon: separate launcher pins cannot change the signed app's running identity. Windows creates Start-menu shortcuts; Linux creates desktop entries. Pin those manually using your OS.
+
+Five icon colors are available: **white, yellow, blue, purple, and teal**. The first five profiles default to those colors in order; later profiles repeat the palette. `icon ID COLOR` changes one profile, and the choice persists across rename/setup/update. The OpenAI mark uses dark lines on white/yellow and white lines on blue/purple/teal, with at least 4.5:1 contrast. macOS uses the same artwork for launcher pins, Spotlight/Raycast results, helper menu rows, and chooser cards; Windows shortcuts use ICO files and Linux desktop entries use PNGs. Icons for the running official app may still group under its original identity.
+
+![Five profile icon colors](docs/icons.png)
 
 The macOS menu-bar helper lists all profiles and offers a chooser preview. Start **Connect** in the intended profile, authorize in your browser, select that same profile, and click **Continue**. Closed or ambiguous processes are disabled on macOS; no account is preselected. Browser account selection is independent—choose the correct provider/ChatGPT account before authorizing.
 
@@ -77,7 +88,7 @@ Windows/Linux forwarding invokes the desktop app with the selected user-data dir
 
 Primary adopts `~/.codex` and normal desktop state. On macOS, if both `~/.codex-work` and `~/Library/Application Support/Codex Second` exist, Secondary adopts them. Other profiles get new private directories. No credentials are copied between accounts.
 
-The earlier local `Codex Callback Router` login agent is retired, with its app and disabled agent file retained. Edi's Account Switcher remains installed and its shortcuts continue to work.
+The earlier local `Codex Callback Router` login agent is retired, with its app and disabled agent file retained. Edi's Account Switcher remains installed and its shortcuts continue to work. When replacing his Primary/Secondary launcher wrappers, their original apps are backed up under `retired-launchers/`; uninstall restores them if the original paths are vacant. Other apps are never overwritten merely because their names match.
 
 State lives in:
 
@@ -107,4 +118,4 @@ The macOS build embeds a universal native helper. Releases compile six OS/archit
 
 ## License
 
-MIT for this project's original code. Methodology credit belongs to Edi Hasaj. OpenAI, ChatGPT, and Codex trademarks belong to their owners. Launcher icons use original numbered artwork.
+MIT for this project's original code. Methodology credit belongs to Edi Hasaj. OpenAI, ChatGPT, and Codex trademarks belong to their owners. The OpenAI mark in profile icons belongs to OpenAI and is excluded from the MIT license; see [icon attribution](cmd/multi-codex-app/assets/icons/README.md).
