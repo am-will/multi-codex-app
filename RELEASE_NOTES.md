@@ -1,4 +1,4 @@
-A polished terminal wizard with an installation report before the first question.
+A polished terminal wizard with an installation report before the first question. Includes a small title-frame alignment correction.
 
 - Scans the existing Codex app, helper files, saved profiles, and OS launchers before asking for changes.
 - Reports actual launcher names and icon colors read from installed PNG/ICO/ICNS artwork; highlights missing launchers and differences from saved settings.

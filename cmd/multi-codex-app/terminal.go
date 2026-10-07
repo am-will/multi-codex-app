@@ -51,7 +51,7 @@ func (w *wizardPrompt) banner() {
 	fmt.Fprintln(w.out)
 	fmt.Fprintln(w.out, s.accent("  ╭──────────────────────────────────────────────────────╮"))
 	fmt.Fprintln(w.out, s.accent("  │  ✦  MULTI CODEX                                      │"))
-	fmt.Fprintln(w.out, s.accent("  │")+"     Your accounts. Your names. Your colors.           "+s.accent("│"))
+	fmt.Fprintln(w.out, s.accent("  │")+"     Your accounts. Your names. Your colors.          "+s.accent("│"))
 	fmt.Fprintln(w.out, s.accent("  ╰──────────────────────────────────────────────────────╯"))
 	fmt.Fprintln(w.out, s.dim("     Setup wizard · press Enter to keep a shown value"))
 }
