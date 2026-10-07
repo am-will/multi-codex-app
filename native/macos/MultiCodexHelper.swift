@@ -228,7 +228,7 @@ if args.count==3 && ["--focus","--deliver"].contains(args[1]) {
 }
 // Only the main helper holds the per-installation lock. Utility/launcher modes above exit first.
 let lockPath = rootPath() + "/helper.lock"
-let lockFD = open(lockPath, O_CREAT | O_RDWR, mode_t(0600))
+let lockFD = open(lockPath, O_CREAT | O_RDWR, mode_t(0o600))
 if !args.contains("--preview") && Bundle.main.object(forInfoDictionaryKey: "MultiCodexProfileID") == nil {
     guard lockFD >= 0 else { exit(1) }
     var acquired = false

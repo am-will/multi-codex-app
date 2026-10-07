@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const helperID = "io.github.am-will.multi-codex-app"
@@ -108,6 +109,16 @@ func helperPlist(c Config, root, profileID string) string {
 	return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>` + id + `</string><key>CFBundleExecutable</key><string>MultiCodexHelper</string><key>CFBundleName</key><string>` + role + `</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>0.1.0</string><key>CFBundleVersion</key><string>1</string><key>LSUIElement</key><true/><key>CFBundleIconFile</key><string>ProfileIcon.icns</string><key>NSAppleEventsUsageDescription</key><string>Route a connection to the Codex profile you choose.</string><key>MultiCodexRoot</key><string>` + plistEscape(root) + `</string><key>MultiCodexCLI</key><string>` + plistEscape(c.CLIPath) + `</string>` + extra + `</dict></plist>`
 }
 func installMac(root string, c *Config, dock bool, home string) error {
+	// Repair private lock permissions from pre-release builds before restarting.
+	lockPath := filepath.Join(root, "helper.lock")
+	if info, err := os.Lstat(lockPath); err == nil {
+		if !info.Mode().IsRegular() {
+			return errors.New("helper lock is not a regular file")
+		}
+		if err := os.Chmod(lockPath, 0600); err != nil {
+			return err
+		}
+	}
 	bundle := filepath.Join(root, "Multi Codex Helper.app")
 	helper := helperPath(root)
 	// The release embeds a compiled helper, so users don't need Swift/Xcode.
@@ -186,6 +197,20 @@ func installMac(root string, c *Config, dock bool, home string) error {
 	}
 	if e = runQuiet("launchctl", "bootstrap", "gui/"+strconv.Itoa(os.Getuid()), agent); e != nil {
 		return e
+	}
+	// Wait for registration and a live supervised helper before reporting success.
+	ready := false
+	for attempt := 0; attempt < 60; attempt++ {
+		job, jobErr := exec.Command("launchctl", "print", label).Output()
+		owner, ownerErr := exec.Command(helper, "--handler").Output()
+		if jobErr == nil && ownerErr == nil && strings.Contains(string(job), "\n\tstate = running\n") && strings.TrimSpace(string(owner)) == helperID {
+			ready = true
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if !ready {
+		return errors.New("helper did not become ready; run doctor, then retry setup")
 	}
 	if dock {
 		if e = runQuiet(helper, append([]string{"--pin"}, paths...)...); e != nil {

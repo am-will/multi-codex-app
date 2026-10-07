@@ -267,6 +267,21 @@ func update() error {
 	if e != nil {
 		return e
 	}
+	if runtime.GOOS == "windows" {
+		// Let this executable exit before the new installer replaces it.
+		installer := filepath.Join(stateRoot(), "update-installer.ps1")
+		if e := atomicWrite(installer, b, 0600); e != nil {
+			return e
+		}
+		cmd := exec.Command("powershell.exe", "-NoProfile", "-File", installer, "-Count", strconv.Itoa(len(c.Profiles)))
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if e := cmd.Start(); e != nil {
+			return e
+		}
+		return cmd.Process.Release()
+	}
 	f, e := os.CreateTemp("", "multi-codex-update-*")
 	if e != nil {
 		return e
