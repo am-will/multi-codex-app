@@ -51,12 +51,28 @@ func TestWizardSelectedEditOnlyAsksChosenFieldsAndCanCancel(t *testing.T) {
 	if strings.Contains(out.String(), "Icon color (name or") || !strings.Contains(out.String(), "Name [Secondary]") {
 		t.Fatal("asked unrelated fields", out.String())
 	}
+	if strings.Contains(out.String(), "PURPLE") || strings.Contains(out.String(), "TEAL") {
+		t.Fatal("name-only edit displayed the color palette", out.String())
+	}
 	after, _ := os.ReadFile(filepath.Join(root, "config.json"))
 	if !bytes.Equal(before, after) {
 		t.Fatal("cancel changed saved configuration")
 	}
 	if c.Profiles[1].Name != "Secondary" {
 		t.Fatal("edit mutated the caller's profiles before apply")
+	}
+}
+func TestWizardColorEditsShowPalette(t *testing.T) {
+	for _, input := range []string{"2\n2\npurple\nno\n", "2\n3\nWork\npurple\nno\n"} {
+		root, c := managementFixture(t)
+		var out bytes.Buffer
+		w := wizardPrompt{out: &out, reader: bufio.NewReader(strings.NewReader(input))}
+		if e := w.editExisting(root, c); e != nil {
+			t.Fatal(e)
+		}
+		if !strings.Contains(out.String(), "TEAL") || !strings.Contains(out.String(), "Icon color (name or") {
+			t.Fatal("color edit omitted the palette or color prompt", out.String())
+		}
 	}
 }
 func TestRemovalArchivesIdentityAndNeverReusesData(t *testing.T) {

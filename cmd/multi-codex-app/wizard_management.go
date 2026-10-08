@@ -103,7 +103,9 @@ func (w *wizardPrompt) editExisting(root string, c Config) error {
 	c.Profiles = append([]Profile(nil), c.Profiles...)
 	for i := range c.Profiles {
 		if c.Profiles[i].ID == p.ID {
-			w.palette()
+			if field == 2 || field == 3 {
+				w.palette()
+			}
 			if e = w.editFields(&c, i, field == 1 || field == 3, field == 2 || field == 3); e != nil {
 				return e
 			}
