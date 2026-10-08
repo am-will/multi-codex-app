@@ -91,6 +91,8 @@ func run(args []string) error {
 			return errors.New("usage: multi-codex-app icon ID COLOR; run icons to see colors")
 		}
 		return setIcon(args[1], args[2])
+	case "share":
+		return shareCommand(args[1:])
 	case "callback":
 		if len(args) != 2 {
 			return errors.New("expected one callback URL")
@@ -125,6 +127,9 @@ const help = `multi-codex-app — independent Codex desktop profiles
   rename ID NAME                            Rename picker and OS launcher
   icons                                     Show the five icon colors
   icon ID COLOR                             Change one profile icon
+  share                                     Show who shares chats and memories
+  share ID all|chats|memories|off           Share chats and/or memories, or stop
+  share owner ID                            Choose the profile holding shared data
   update                                    Install the newest release, keeping profiles
   doctor                                    Check paths and callback routing (no tokens)
   uninstall                                 Remove integration; preserve profile data

@@ -252,14 +252,43 @@ func doctor() error {
 			return fmt.Errorf("profile %s desktop data missing", p.ID)
 		}
 	}
+	sharingErr := doctorSharing(c)
 	if runtime.GOOS == "darwin" {
 		cmd := exec.Command(helperPath(stateRoot()), "--status")
 		cmd.Env = append(os.Environ(), "MULTI_CODEX_ROOT="+stateRoot())
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		return cmd.Run()
+		if e = cmd.Run(); e != nil {
+			return e
+		}
+		return sharingErr
 	}
 	fmt.Println("Profile paths OK. Desktop callback adapters are experimental on this OS.")
+	return sharingErr
+}
+func doctorSharing(c Config) error {
+	shared := sharingProfiles(c)
+	if len(shared) == 0 {
+		return nil
+	}
+	owner := sharingOwner(c)
+	fmt.Printf("Sharing owner: #%s %s\n", owner.ID, owner.CodexHome)
+	broken := false
+	for _, p := range shared {
+		problems := sharingProblems(c, p)
+		if len(problems) == 0 {
+			fmt.Printf("Profile %s sharing OK: %s\n", p.ID, sharingSummary(p.ShareChats, p.ShareMemories))
+			continue
+		}
+		broken = true
+		for _, problem := range problems {
+			fmt.Printf("Profile %s sharing: %s\n", p.ID, problem)
+		}
+		fmt.Printf("  Quit %s, then run: multi-codex-app share %s %s\n", launcherName(p.Name), p.ID, sharingModeName(p.ShareChats, p.ShareMemories))
+	}
+	if broken {
+		return errors.New("sharing needs repair; see above")
+	}
 	return nil
 }
 func uninstall() error {
