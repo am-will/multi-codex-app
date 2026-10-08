@@ -93,34 +93,60 @@ On macOS, the menu-bar helper also lists all your profiles and can show a previe
 
 ## Sharing chats and memories
 
-Each app keeps its own chats and memories unless you share them. Run `multi-codex-app wizard` and choose **Share chats and memories between profiles**, or use `multi-codex-app share`. For each profile you can pick:
+Each app starts with its own chats and memories. If you want an app to see the same chats and memories as another one, turn sharing on for it. You can turn it off again whenever you like.
 
-| Option | What that app uses |
-| --- | --- |
-| **Chats and memories** | The shared chats and the shared memories |
-| **Chats only** | The shared chats, with its own memories |
-| **Memories only** | Its own chats, with the shared memories |
-| **Neither** | Its own chats and memories (the default) |
+The shared chats and memories live in one app, called the **owner**. That's profile 1, your original Codex, unless you pick another.
 
-Shared chats and memories live in one profile's folder, called the **owner**. That's profile 1 unless you choose another.
+### Turn sharing on
 
-- **Shared chats are live.** Every app that shares chats sees the same list, including new chats from the others. Nothing is copied or synced, so nothing drifts and no extra disk space is used.
-- **Only the account that started a chat can continue it.** Codex encrypts part of each chat for the account that wrote it. You can read and search every shared chat, and start a new chat that refers to one.
-- **The owner writes shared memories.** Codex only writes memories into a real folder, so the owner's app writes them and the others read them. They're always current, but they only grow while you use the owner's app, so make your most-used profile the owner.
-- **Quit an app before changing its sharing.** Multi Codex checks, and won't change an open profile.
+1. **Quit the app** you want to change. On a Mac, press ⌘Q; closing the window isn't enough.
+2. **Run `multi-codex-app wizard`** and choose **Share chats and memories between profiles**, then **Change one profile**. Pick the app and what it should share.
+3. **Open the app again.** It now shows the shared chats and memories.
 
-**Turning sharing off** gives the profile back its own chats and memories exactly as they were. Nothing is deleted. Chats it started while sharing stay in the shared history, where the other apps can still open them. While a profile shares, its own data waits in a `.multi-codex-private` folder inside its Codex folder.
+Or do it in one command, using the profile's number from `multi-codex-app list`:
+
+```sh
+multi-codex-app share 2 all
+```
+
+### Turn sharing off
+
+1. **Quit the app.**
+2. **Run `multi-codex-app share 2 off`**, or choose **Neither** in the wizard.
+3. **Open the app again.** Its own chats and memories are back, exactly as they were.
+
+Turning sharing off never deletes anything. Chats the app started while sharing stay with the shared chats, so the owner can still open them.
+
+### What you can share
+
+| Option | Command | What the app shows |
+| --- | --- | --- |
+| Chats and memories | `share 2 all` | The shared chats and the shared memories |
+| Chats only | `share 2 chats` | The shared chats, with its own memories |
+| Memories only | `share 2 memories` | Its own chats, with the shared memories |
+| Neither | `share 2 off` | Its own chats and memories (the default) |
+
+Run `multi-codex-app share` to see what each app shares.
+
+### Good to know
+
+- **Shared chats are live.** Every sharing app sees the same chats, including new ones from the others. Nothing is copied, so nothing gets out of sync and no extra disk space is used.
+- **You can read every shared chat, but only continue your own.** Codex ties each chat to the account that started it. To pick up another account's chat, start a new chat and refer to it.
+- **Memories grow in the owner.** Only the owner's app writes memories; the other apps read them. The more you use the owner, the more the shared memories grow, so make your most-used app the owner.
+- **Work accounts.** When an app shares chats, the owner can learn memories from them, using the owner's account. If that's not OK for a work account, choose **Memories only** for it: it gets the shared memories without adding its chats.
+- **Removing or uninstalling.** Turn sharing off first. Multi Codex reminds you if you forget.
 
 <details>
 <summary><b>More about sharing</b></summary>
 
 <br>
 
-- **What's linked.** Sharing chats links the profile's chat storage to the owner's: `sessions`, `archived_sessions`, the chat databases, attachments, generated images, and Codex's chat write locks. Codex already coordinates several apps using one copy, the same way the Codex CLI and desktop app share `~/.codex`. If two apps try to write to the same chat at once, the second one is told the chat is busy. Sharing memories links the `memories` folders.
-- **What stays separate.** Sign-ins, settings, and plugins stay with each profile. So does each profile's memory database, so resetting memories in a sharing app can't clear the owner's.
-- **Where memories come from.** Codex builds memories from the chats an app can see. With shared chats, the owner learns from everyone's chats, using the owner account's usage. A profile that shares chats but keeps its own memories builds those from the shared chats too. They're kept for next time when it stops sharing.
-- **Changing the owner.** `multi-codex-app share owner ID` works while nothing is shared. The new owner's own chats and memories become the shared ones.
-- **After Codex updates,** run `multi-codex-app doctor`. If Codex moved to a new chat database, it tells you which command repairs the links. Running a profile's current option again, like `share 2 all`, always repairs it.
+- **Where your own chats wait.** While an app shares, its own chats and memories wait in a `.multi-codex-private` folder inside its Codex folder. Turning sharing off moves them back.
+- **What's linked.** Sharing chats links the app's chat storage to the owner's: `sessions`, `archived_sessions`, the chat databases, attachments, generated images, and Codex's chat write locks. Codex already handles several apps using one copy, the same way the Codex CLI and desktop app share `~/.codex`. If two apps write to the same chat at once, the second is told the chat is busy. Sharing memories links the `memories` folders.
+- **What stays separate.** Sign-ins, settings, and plugins always stay with each app. So does each app's memory database, so resetting memories in a sharing app can't clear the owner's.
+- **Chats only.** An app that shares chats but keeps its own memories builds them from the shared chats. Those memories are kept for next time when it stops sharing.
+- **Changing the owner.** `multi-codex-app share owner 3` works while nothing is shared. The new owner's own chats and memories become the shared ones.
+- **After Codex updates,** run `multi-codex-app doctor`. If something needs repair, it tells you the command. Choosing an app's current option again, like `share 2 all`, always repairs it.
 - **Platforms.** Sharing works on macOS and Linux. Windows isn't supported yet, because SQLite there doesn't follow links. Turning chat sharing off uses the `sqlite3` command, which macOS includes, or Python 3 on Linux.
 
 </details>
@@ -156,7 +182,7 @@ Shared chats and memories live in one profile's folder, called the **owner**. Th
 - **Colors.** The first five profiles get white, yellow, blue, purple, and teal, in that order, and later ones repeat. Your choice sticks through renames, setup, and updates. The same artwork is used for launchers, Spotlight and Raycast results, the helper menu, and the chooser.
 - **Adding.** `add` walks you through the new profiles. `add --count 2` adds two with default names and colors.
 - **Full setup** never removes profiles or replaces sign-ins. `setup --count 6` makes sure you have six in total, and `update` keeps all your current choices.
-- **Removing.** `remove ID` takes away that profile's launcher and Dock icon but keeps its sign-in, chats, settings, and data. It doesn't close a window that's already open. Removing your last profile also removes the helper. `restore ID` brings a profile back, as long as its name doesn't clash with another launcher.
+- **Removing.** `remove ID` takes away that profile's launcher and Dock icon but keeps its sign-in, chats, settings, and data. It doesn't close a window that's already open. Removing your last profile also removes the helper. `restore ID` brings a profile back, as long as its name doesn't clash with another launcher. If the profile shares chats or memories, or is the owner of shared ones, turn sharing off first.
 - **Plain text.** Set `NO_COLOR=1` or `TERM=dumb` to turn off the wizard's colors.
 
 </details>
@@ -214,7 +240,7 @@ Each holds `config.json`, the CLI in `bin/`, and the extra profiles in `profiles
 multi-codex-app uninstall
 ```
 
-This restores the login-link handler you had before and removes the helper, the launchers, and their Dock pins. It keeps the CLI, `config.json`, and all profile data, so you don't lose sign-ins or chats. Run `multi-codex-app setup` to turn it back on. If you want to delete everything, back up your profile data before removing the folder by hand.
+This restores the login-link handler you had before and removes the helper, the launchers, and their Dock pins. It keeps the CLI, `config.json`, and all profile data, so you don't lose sign-ins or chats. If any app still shares chats or memories, uninstall asks you to turn that off first, so each app has its own chats back. Run `multi-codex-app setup` to turn it back on. If you want to delete everything, back up your profile data before removing the folder by hand.
 
 </details>
 
