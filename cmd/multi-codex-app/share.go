@@ -223,6 +223,32 @@ func applySharing(root, id string, chats, memories bool) error {
 	return saveConfig(root, latest)
 }
 
+// checkRemovalWhileSharing keeps sharing profiles and their owner installed until sharing is off.
+// Deleting a sharing profile's folder later would take its set-aside chats with it and leave the
+// chats it started unreadable in the owner, since only turning sharing off repoints them.
+func checkRemovalWhileSharing(c Config, p Profile) error {
+	if p.ShareChats || p.ShareMemories {
+		return fmt.Errorf("#%s shares chats or memories; turn that off first: multi-codex-app share %s off", p.ID, p.ID)
+	}
+	if shared := sharingProfiles(c); len(shared) > 0 && p.ID == sharingOwner(c).ID {
+		return fmt.Errorf("#%s holds the shared chats and memories; turn sharing off first: %s", p.ID, shareOffCommands(shared))
+	}
+	return nil
+}
+func checkUninstallWhileSharing(c Config) error {
+	if shared := sharingProfiles(c); len(shared) > 0 {
+		return fmt.Errorf("some profiles share chats or memories; turn sharing off first: %s", shareOffCommands(shared))
+	}
+	return nil
+}
+func shareOffCommands(profiles []Profile) string {
+	var commands []string
+	for _, p := range profiles {
+		commands = append(commands, "multi-codex-app share "+p.ID+" off")
+	}
+	return strings.Join(commands, "; ")
+}
+
 func setSharingOwner(root, id string) error {
 	c, e := readConfig(root)
 	if e != nil {

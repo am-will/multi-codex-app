@@ -297,6 +297,9 @@ func uninstall() error {
 	if e != nil {
 		return e
 	}
+	if e = checkUninstallWhileSharing(c); e != nil {
+		return e
+	}
 	home, _ := os.UserHomeDir()
 	return uninstallAt(root, c, home)
 }

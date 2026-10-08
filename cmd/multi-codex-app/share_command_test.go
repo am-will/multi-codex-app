@@ -3,12 +3,49 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestRemoveAndUninstallWaitUntilSharingIsOff(t *testing.T) {
+	root, _, _ := sharingFixture(t)
+	if e := applySharing(root, "2", true, false); e != nil {
+		t.Fatal(e)
+	}
+	c, _ := readConfig(root)
+	if e := removeProfileAt(root, c, "2", root); e == nil || !strings.Contains(e.Error(), "multi-codex-app share 2 off") {
+		t.Fatal("removed a sharing profile", e)
+	}
+	if e := removeProfileAt(root, c, "1", root); e == nil || !strings.Contains(e.Error(), "holds the shared") {
+		t.Fatal("removed the owner while #2 shares", e)
+	}
+	// Uninstall is checked directly: a real uninstall in a test would touch this machine's helper.
+	if e := checkUninstallWhileSharing(c); e == nil || !strings.Contains(e.Error(), "multi-codex-app share 2 off") {
+		t.Fatal("uninstall allowed while #2 shares", e)
+	}
+	var out bytes.Buffer
+	w := wizardPrompt{out: &out, reader: bufio.NewReader(strings.NewReader("2\n"))}
+	if e := w.removeExisting(root, c); e != nil {
+		t.Fatal(e)
+	}
+	if !strings.Contains(out.String(), "share 2 off") || strings.Contains(out.String(), "Remove this profile?") {
+		t.Fatal(out.String())
+	}
+	if after, _ := readConfig(root); len(after.Profiles) != 3 {
+		t.Fatal("a profile was removed")
+	}
+	if e := applySharing(root, "2", false, false); e != nil {
+		t.Fatal(e)
+	}
+	c, _ = readConfig(root)
+	if checkUninstallWhileSharing(c) != nil || checkRemovalWhileSharing(c, c.Profiles[0]) != nil || checkRemovalWhileSharing(c, c.Profiles[1]) != nil {
+		t.Fatal("still blocked after sharing was turned off")
+	}
+}
 
 func TestShareCommandModesOwnerAndStatus(t *testing.T) {
 	root, _, home := sharingFixture(t)

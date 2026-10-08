@@ -35,6 +35,9 @@ func removeProfileAt(root string, c Config, id, home string) error {
 		return errors.New("this profile changed while the wizard was open; select it again")
 	}
 	c = latest
+	if e = checkRemovalWhileSharing(c, current); e != nil {
+		return e
+	}
 	next, p, e := archivedConfig(c, id)
 	if e != nil {
 		return e

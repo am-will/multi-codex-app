@@ -234,6 +234,10 @@ func (w *wizardPrompt) removeExisting(root string, c Config) error {
 	if e != nil || !ok {
 		return e
 	}
+	if e = checkRemovalWhileSharing(c, p); e != nil {
+		fmt.Fprintln(w.out, "     "+terminalText(e.Error()))
+		return nil
+	}
 	w.section("04", "REMOVE THIS PROFILE")
 	fmt.Fprintf(w.out, "     #%s  %s\n", p.ID, launcherName(p.Name))
 	fmt.Fprintln(w.out, "     Its launcher and helper entry will be removed. Saved data stays in place.")
