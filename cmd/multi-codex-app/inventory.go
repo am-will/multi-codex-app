@@ -15,10 +15,14 @@ type installationReport struct {
 	Profiles                         []Profile
 	Launchers                        []installedLauncher
 	Warnings                         []string
+	SharingOwner                     string // set only while some profile shares
 }
 
 func inspectInstallation(root string, c Config, home, platform, appOverride string) installationReport {
 	report := installationReport{Profiles: c.Profiles, AppPath: c.AppPath, HelperStatus: "not installed"}
+	if len(sharingProfiles(c)) > 0 {
+		report.SharingOwner = sharingOwner(c).ID
+	}
 	if appOverride != "" {
 		report.AppPath, _ = filepath.Abs(appOverride)
 	}
@@ -166,6 +170,11 @@ func (w *wizardPrompt) report(r installationReport) {
 		}
 		if !isDir(p.CodexHome) || (p.UserDataDir != "" && !isDir(p.UserDataDir)) {
 			fmt.Fprintln(w.out, "         "+s.paint("33", "profile data directory unavailable"))
+		}
+		if p.ID == r.SharingOwner {
+			fmt.Fprintln(w.out, "         "+s.dim("holds the shared chats and memories"))
+		} else if r.SharingOwner != "" && (p.ShareChats || p.ShareMemories) {
+			fmt.Fprintln(w.out, "         "+s.dim(sharingSummary(p.ShareChats, p.ShareMemories)))
 		}
 	}
 	for _, l := range r.Launchers {

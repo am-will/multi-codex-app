@@ -30,7 +30,7 @@ func (w *wizardPrompt) menu(question string, labels []string) (int, error) {
 func (w *wizardPrompt) managementAction(c Config) (string, error) {
 	for {
 		w.section("02", "WHAT WOULD YOU LIKE TO DO?")
-		n, e := w.menu("Choose an action", []string{"Full setup — choose total instances, then name and color them", "Edit one existing profile — pick its name and/or color", "Add or remove one profile"})
+		n, e := w.menu("Choose an action", []string{"Full setup — choose total instances, then name and color them", "Edit one existing profile — pick its name and/or color", "Add or remove one profile", "Share chats and memories between profiles"})
 		if e != nil {
 			return "", e
 		}
@@ -59,6 +59,11 @@ func (w *wizardPrompt) managementAction(c Config) (string, error) {
 				}
 				fmt.Fprintln(w.out, "     No existing profiles to remove yet.")
 			}
+		case 4:
+			if len(c.Profiles) > 1 {
+				return "share", nil
+			}
+			fmt.Fprintln(w.out, "     Sharing needs at least two profiles.")
 		}
 	}
 }

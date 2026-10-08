@@ -186,6 +186,8 @@ func setup(args []string, add bool) error {
 			return wizard.addSingle(stateRoot(), c, *app, !*noDock)
 		case "remove":
 			return wizard.removeExisting(stateRoot(), c)
+		case "share":
+			return wizard.shareSettings(stateRoot())
 		case "quit":
 			return nil
 		}

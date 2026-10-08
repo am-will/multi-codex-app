@@ -31,7 +31,7 @@ func managementFixture(t *testing.T) (string, Config) {
 }
 func TestWizardManagementRoutesAndBack(t *testing.T) {
 	_, c := managementFixture(t)
-	for input, want := range map[string]string{"1\n": "setup", "2\n": "edit", "3\n1\n": "add", "3\n2\n": "remove", "3\n0\n1\n": "setup", "0\n": "quit"} {
+	for input, want := range map[string]string{"1\n": "setup", "2\n": "edit", "3\n1\n": "add", "3\n2\n": "remove", "3\n0\n1\n": "setup", "4\n": "share", "0\n": "quit"} {
 		var out bytes.Buffer
 		w := wizardPrompt{out: &out, reader: bufio.NewReader(strings.NewReader(input))}
 		got, e := w.managementAction(c)
