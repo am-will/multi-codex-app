@@ -126,6 +126,50 @@ func TestShareChatsLinksOwnerCopyAndOffRestoresOwnData(t *testing.T) {
 	}
 }
 
+func TestShareOffRepointsChatsRecordedThroughLinks(t *testing.T) {
+	sqlite, e := exec.LookPath("sqlite3")
+	if e != nil {
+		t.Skip("needs the sqlite3 command")
+	}
+	root, owner, home := sharingFixture(t)
+	db := filepath.Join(owner, "state_5.sqlite")
+	os.Remove(db)
+	rows := [][2]string{
+		{"owner", filepath.Join(owner, "sessions", "a.jsonl")},
+		{"made-while-sharing", filepath.Join(home, "sessions", "2026", "b.jsonl")},
+		{"archived-while-sharing", filepath.Join(home, "archived_sessions", "c.jsonl")},
+		{"lookalike", filepath.Join(home+"-other", "sessions", "d.jsonl")},
+		{"quote's", filepath.Join(home, "sessions", "it's.jsonl")},
+	}
+	sql := "CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL);\n"
+	for _, row := range rows {
+		sql += "INSERT INTO threads VALUES (" + sqlQuote(row[0]) + ", " + sqlQuote(row[1]) + ");\n"
+	}
+	if e := runSQL(db, sql); e != nil {
+		t.Fatal(e)
+	}
+	if e := applySharing(root, "2", true, false); e != nil {
+		t.Fatal(e)
+	}
+	if e := applySharing(root, "2", false, false); e != nil {
+		t.Fatal(e)
+	}
+	out, e := exec.Command(sqlite, db, "SELECT id || '=' || rollout_path FROM threads ORDER BY id").Output()
+	if e != nil {
+		t.Fatal(e)
+	}
+	want := []string{
+		"archived-while-sharing=" + filepath.Join(owner, "archived_sessions", "c.jsonl"),
+		"lookalike=" + filepath.Join(home+"-other", "sessions", "d.jsonl"),
+		"made-while-sharing=" + filepath.Join(owner, "sessions", "2026", "b.jsonl"),
+		"owner=" + filepath.Join(owner, "sessions", "a.jsonl"),
+		"quote's=" + filepath.Join(owner, "sessions", "it's.jsonl"),
+	}
+	if got := strings.Split(strings.TrimSpace(string(out)), "\n"); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("recorded paths:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
 func TestShareMemoriesIndependentlyOfChats(t *testing.T) {
 	root, owner, home := sharingFixture(t)
 	private := filepath.Join(home, privateDirName)

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -300,6 +302,12 @@ func (m *sharingMove) apply(oldChats, oldMemories, chats, memories bool) error {
 		return e
 	}
 	linked, chatPrivate, memory := m.items()
+	if !chats && (oldChats || m.state["sessions"] == sharedLink) {
+		// Before the links go away, so a failure leaves sharing exactly as it was.
+		if e := m.repointRecordedChats(linked); e != nil {
+			return fmt.Errorf("could not update where shared chats are recorded: %w", e)
+		}
+	}
 	type step struct {
 		item     shareItem
 		from, to occupant
@@ -499,6 +507,70 @@ func (m *sharingMove) clear(path string, item shareItem) error {
 		dest = filepath.Join(dir, filepath.Base(path)+"-"+strconv.Itoa(n))
 	}
 	return os.Rename(path, dest)
+}
+
+// repointRecordedChats rewrites chat file paths that Codex recorded through this profile's
+// links (it records paths as the writing app saw them) to the owner's real folders, where the
+// files already are. Otherwise the shared chats this profile started could not be opened once
+// its links are removed.
+func (m *sharingMove) repointRecordedChats(linked []shareItem) error {
+	homes := []string{m.home}
+	if resolved, e := filepath.EvalSymlinks(m.home); e == nil && resolved != m.home {
+		homes = append(homes, resolved)
+	}
+	var sql strings.Builder
+	sql.WriteString("PRAGMA busy_timeout = 10000;\nBEGIN IMMEDIATE;\n")
+	for _, dir := range []string{"sessions", "archived_sessions"} {
+		to := filepath.Join(m.owner, dir) + string(filepath.Separator)
+		for _, home := range homes {
+			from := filepath.Join(home, dir) + string(filepath.Separator)
+			fmt.Fprintf(&sql, "UPDATE threads SET rollout_path = %s || substr(rollout_path, length(%s) + 1) WHERE substr(rollout_path, 1, length(%s)) = %s;\n", sqlQuote(to), sqlQuote(from), sqlQuote(from), sqlQuote(from))
+		}
+	}
+	sql.WriteString("COMMIT;\n")
+	for _, item := range linked {
+		if kind, _, ok := chatDatabaseVersion(item.name); !ok || kind != "state" || !sqliteDatabase(m.ownerPath(item)) {
+			continue
+		}
+		if e := runSQL(m.ownerPath(item), sql.String()); e != nil && !strings.Contains(e.Error(), "no such table: threads") {
+			return e
+		}
+	}
+	return nil
+}
+func sqlQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+func sqliteDatabase(path string) bool {
+	f, e := os.Open(path)
+	if e != nil {
+		return false
+	}
+	defer f.Close()
+	header := make([]byte, 16)
+	_, e = io.ReadFull(f, header)
+	return e == nil && string(header) == "SQLite format 3\x00"
+}
+
+// runSQL uses the sqlite3 command, which macOS always includes, or Python's built-in sqlite3,
+// which Linux installs need for the chooser anyway. Both honor the locks of running Codex apps.
+func runSQL(db, sql string) error {
+	var cmd *exec.Cmd
+	sqlite, e := exec.LookPath("sqlite3")
+	if regularFile("/usr/bin/sqlite3") {
+		sqlite, e = "/usr/bin/sqlite3", nil
+	}
+	if e == nil {
+		cmd = exec.Command(sqlite, "-bail", db)
+	} else if path, e := exec.LookPath("python3"); e == nil {
+		cmd = exec.Command(path, "-I", "-c", "import sqlite3, sys\nc = sqlite3.connect(sys.argv[1], timeout=10, isolation_level=None)\nc.executescript(sys.stdin.read())", db)
+	} else {
+		return errors.New("needs the sqlite3 command or Python 3")
+	}
+	cmd.Stdin = strings.NewReader(sql)
+	out, e := cmd.CombinedOutput()
+	if e != nil {
+		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // ensureOwnerItem creates an empty folder or database in the owner when it has none yet, so
