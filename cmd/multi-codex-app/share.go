@@ -361,7 +361,79 @@ func (m *sharingMove) apply(oldChats, oldMemories, chats, memories bool) error {
 			return e
 		}
 	}
+	if e := m.refreshDesktopChatList(oldChats != chats); e != nil {
+		return fmt.Errorf("could not refresh the app's chat list: %w", e)
+	}
 	return m.tidy(chats || memories)
+}
+
+// The desktop app keeps its own list of chats for the sidebar in sqlite/codex-dev.db, beside
+// unrelated data such as automations. It is not told when the chats behind it change, so after
+// a switch it would keep listing chats it can no longer open.
+func (m *sharingMove) desktopCatalog() string {
+	return filepath.Join(m.home, "sqlite", "codex-dev.db")
+}
+
+// refreshDesktopChatList clears the app's list of local chats when the chats it sees have
+// changed, or when it lists chats it cannot open, so the app rebuilds it on its next launch the
+// way it does after a fresh install. Cloud tasks and everything else in the file are kept.
+func (m *sharingMove) refreshDesktopChatList(changed bool) error {
+	catalog := m.desktopCatalog()
+	if !sqliteDatabase(catalog) {
+		return nil
+	}
+	if !changed {
+		stale, e := m.unreachableDesktopChats()
+		if e != nil || stale == 0 {
+			return e
+		}
+	}
+	e := runSQL(catalog, `PRAGMA busy_timeout = 10000;
+BEGIN IMMEDIATE;
+DELETE FROM local_thread_catalog WHERE host_id = 'local';
+DELETE FROM local_thread_catalog_scan_entries WHERE host_id = 'local';
+DELETE FROM local_thread_catalog_scan_checkpoints WHERE host_id = 'local';
+DELETE FROM local_thread_catalog_sync_state WHERE host_id = 'local';
+UPDATE local_thread_catalog_metadata SET catalog_revision = catalog_revision + 1;
+COMMIT;
+`)
+	if e != nil && strings.Contains(e.Error(), "no such table") {
+		// An app version without this list has nothing to refresh.
+		return nil
+	}
+	return e
+}
+
+// unreachableDesktopChats counts local chats the app lists that this profile's chats lack.
+func (m *sharingMove) unreachableDesktopChats() (int, error) {
+	state := m.chatDatabase()
+	if !sqliteDatabase(state) {
+		return 0, nil
+	}
+	out, e := querySQL(m.desktopCatalog(), "ATTACH "+sqlQuote(state)+" AS chats;\nSELECT count(*) FROM local_thread_catalog WHERE host_id = 'local' AND thread_id NOT IN (SELECT id FROM chats.threads);\n")
+	if e != nil {
+		if strings.Contains(e.Error(), "no such table") {
+			return 0, nil
+		}
+		return 0, e
+	}
+	lines := strings.Fields(out)
+	if len(lines) == 0 {
+		return 0, nil
+	}
+	return strconv.Atoi(lines[len(lines)-1])
+}
+
+// chatDatabase is the newest chat database in this profile's Codex home, linked or its own.
+func (m *sharingMove) chatDatabase() string {
+	newest, version := filepath.Join(m.home, "state_5.sqlite"), 5
+	entries, _ := os.ReadDir(m.home)
+	for _, entry := range entries {
+		if kind, v, ok := chatDatabaseVersion(entry.Name()); ok && kind == "state" && v > version {
+			newest, version = filepath.Join(m.home, entry.Name()), v
+		}
+	}
+	return newest
 }
 func (m *sharingMove) saveState() error {
 	b, e := json.MarshalIndent(m.state, "", "  ")
@@ -576,27 +648,41 @@ func sqliteDatabase(path string) bool {
 	return e == nil && string(header) == "SQLite format 3\x00"
 }
 
-// runSQL uses the sqlite3 command, which macOS always includes, or Python's built-in sqlite3,
-// which Linux installs need for the chooser anyway. Both honor the locks of running Codex apps.
 func runSQL(db, sql string) error {
+	_, e := querySQL(db, sql)
+	return e
+}
+
+// querySQL runs statements, each ending in ";\n", and returns the rows of the last one. It uses
+// the sqlite3 command, which macOS always includes, or Python's built-in sqlite3, which Linux
+// installs need for the chooser anyway. Both honor the locks of running Codex apps.
+func querySQL(db, sql string) (string, error) {
 	var cmd *exec.Cmd
 	sqlite, e := exec.LookPath("sqlite3")
 	if regularFile("/usr/bin/sqlite3") {
 		sqlite, e = "/usr/bin/sqlite3", nil
 	}
 	if e == nil {
-		cmd = exec.Command(sqlite, "-bail", db)
+		cmd = exec.Command(sqlite, "-bail", "-noheader", "-list", db)
 	} else if path, e := exec.LookPath("python3"); e == nil {
-		cmd = exec.Command(path, "-I", "-c", "import sqlite3, sys\nc = sqlite3.connect(sys.argv[1], timeout=10, isolation_level=None)\nc.executescript(sys.stdin.read())", db)
+		cmd = exec.Command(path, "-I", "-c", `import sqlite3, sys
+c = sqlite3.connect(sys.argv[1], timeout=10, isolation_level=None)
+rows = []
+for statement in sys.stdin.read().split(";\n"):
+    if statement.strip():
+        rows = c.execute(statement).fetchall()
+for row in rows:
+    print("|".join(str(value) for value in row))`, db)
 	} else {
-		return errors.New("needs the sqlite3 command or Python 3")
+		return "", errors.New("needs the sqlite3 command or Python 3")
 	}
 	cmd.Stdin = strings.NewReader(sql)
-	out, e := cmd.CombinedOutput()
-	if e != nil {
-		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if e := cmd.Run(); e != nil {
+		return "", fmt.Errorf("%s", strings.TrimSpace(stderr.String()+" "+stdout.String()))
 	}
-	return nil
+	return stdout.String(), nil
 }
 
 // ensureOwnerItem creates an empty folder or database in the owner when it has none yet, so

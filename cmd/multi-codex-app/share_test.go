@@ -170,6 +170,78 @@ func TestShareOffRepointsChatsRecordedThroughLinks(t *testing.T) {
 	}
 }
 
+func TestShareRefreshesTheDesktopChatList(t *testing.T) {
+	sqlite, e := exec.LookPath("sqlite3")
+	if e != nil {
+		t.Skip("needs the sqlite3 command")
+	}
+	root, owner, home := sharingFixture(t)
+	for db, ids := range map[string][]string{filepath.Join(owner, "state_5.sqlite"): {"o1"}, filepath.Join(home, "state_5.sqlite"): {"p1"}} {
+		os.Remove(db)
+		sql := "CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL DEFAULT '');\n"
+		for _, id := range ids {
+			sql += "INSERT INTO threads (id) VALUES (" + sqlQuote(id) + ");\n"
+		}
+		if e := runSQL(db, sql); e != nil {
+			t.Fatal(e)
+		}
+	}
+	catalog := filepath.Join(home, "sqlite", "codex-dev.db")
+	os.MkdirAll(filepath.Dir(catalog), 0700)
+	if e := runSQL(catalog, `CREATE TABLE local_thread_catalog (host_id TEXT, thread_id TEXT, PRIMARY KEY (host_id, thread_id));
+CREATE TABLE local_thread_catalog_scan_entries (host_id TEXT, thread_id TEXT);
+CREATE TABLE local_thread_catalog_scan_checkpoints (host_id TEXT PRIMARY KEY, checkpoint TEXT);
+CREATE TABLE local_thread_catalog_sync_state (host_id TEXT PRIMARY KEY, initial_build_complete INTEGER);
+CREATE TABLE local_thread_catalog_metadata (id INTEGER PRIMARY KEY, catalog_revision INTEGER);
+CREATE TABLE automations (id TEXT PRIMARY KEY);
+INSERT INTO local_thread_catalog VALUES ('local', 'p1'), ('chatgpt:cloud', 'c1');
+INSERT INTO local_thread_catalog_sync_state VALUES ('local', 1), ('chatgpt:cloud', 1);
+INSERT INTO local_thread_catalog_metadata VALUES (1, 7);
+INSERT INTO automations VALUES ('daily');
+`); e != nil {
+		t.Fatal(e)
+	}
+	snapshot := func() string {
+		t.Helper()
+		out, e := exec.Command(sqlite, catalog, `SELECT (SELECT group_concat(host_id || '/' || thread_id) FROM (SELECT * FROM local_thread_catalog ORDER BY host_id, thread_id)) || ' sync=' || (SELECT group_concat(host_id) FROM local_thread_catalog_sync_state) || ' rev=' || (SELECT catalog_revision FROM local_thread_catalog_metadata) || ' automations=' || (SELECT count(*) FROM automations)`).Output()
+		if e != nil {
+			t.Fatal(e)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	// Switching chats clears the local list so the app rebuilds it; cloud tasks and automations stay.
+	if e := applySharing(root, "2", true, false); e != nil {
+		t.Fatal(e)
+	}
+	if got := snapshot(); got != "chatgpt:cloud/c1 sync=chatgpt:cloud rev=8 automations=1" {
+		t.Fatal(got)
+	}
+	// The app rebuilds from the shared chats; switching back clears that list too.
+	runSQL(catalog, "INSERT INTO local_thread_catalog VALUES ('local', 'o1');\n")
+	if e := applySharing(root, "2", false, false); e != nil {
+		t.Fatal(e)
+	}
+	if got := snapshot(); got != "chatgpt:cloud/c1 sync=chatgpt:cloud rev=9 automations=1" {
+		t.Fatal(got)
+	}
+	// Running the current option again clears a list that names chats this profile cannot open.
+	runSQL(catalog, "INSERT INTO local_thread_catalog VALUES ('local', 'o1');\n")
+	if e := applySharing(root, "2", false, false); e != nil {
+		t.Fatal(e)
+	}
+	if got := snapshot(); got != "chatgpt:cloud/c1 sync=chatgpt:cloud rev=10 automations=1" {
+		t.Fatal(got)
+	}
+	// A list that matches its chats is left alone.
+	runSQL(catalog, "INSERT INTO local_thread_catalog VALUES ('local', 'p1');\n")
+	if e := applySharing(root, "2", false, false); e != nil {
+		t.Fatal(e)
+	}
+	if got := snapshot(); got != "chatgpt:cloud/c1,local/p1 sync=chatgpt:cloud rev=10 automations=1" {
+		t.Fatal(got)
+	}
+}
+
 func TestShareMemoriesIndependentlyOfChats(t *testing.T) {
 	root, owner, home := sharingFixture(t)
 	private := filepath.Join(home, privateDirName)
@@ -333,13 +405,11 @@ func TestHoldSQLiteLockHelper(t *testing.T) {
 	io.Copy(io.Discard, os.Stdin)
 	os.Exit(0)
 }
-func TestCodexHomeInUseSeesAnotherProcess(t *testing.T) {
-	root, _, home := sharingFixture(t)
-	shm := filepath.Join(home, "logs_2.sqlite-shm")
-	writeFile(t, shm, strings.Repeat("\x00", 32768))
-	if inUse, e := codexHomeInUse(home); e != nil || inUse {
-		t.Fatal("idle home reported in use", e)
-	}
+
+// holdLock keeps a SQLite shared-memory lock in another process, the way an open app would,
+// while check runs.
+func holdLock(t *testing.T, shm string, check func()) {
+	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestHoldSQLiteLockHelper$")
 	cmd.Env = append(os.Environ(), "MULTI_CODEX_HOLD_LOCK="+shm)
 	stdin, _ := cmd.StdinPipe()
@@ -350,15 +420,27 @@ func TestCodexHomeInUseSeesAnotherProcess(t *testing.T) {
 	lines := bufio.NewScanner(stdout)
 	for lines.Scan() && lines.Text() != "locked" {
 	}
-	if inUse, e := codexHomeInUse(home); e != nil || !inUse {
-		t.Fatal("open database not detected", e)
-	}
-	if e := applySharing(root, "2", true, false); e == nil || !strings.Contains(e.Error(), "is open") {
-		t.Fatal("changed sharing for an open profile", e)
-	}
-	stdin.Close()
-	cmd.Wait()
-	if inUse, e := codexHomeInUse(home); e != nil || inUse {
-		t.Fatal("closed database still reported in use", e)
+	defer cmd.Wait()
+	defer stdin.Close()
+	check()
+}
+func TestCodexHomeInUseSeesAnotherProcess(t *testing.T) {
+	root, _, home := sharingFixture(t)
+	for _, shm := range []string{filepath.Join(home, "logs_2.sqlite-shm"), filepath.Join(home, "sqlite", "codex-dev.db-shm")} {
+		writeFile(t, shm, strings.Repeat("\x00", 32768))
+		if inUse, e := codexHomeInUse(home); e != nil || inUse {
+			t.Fatal("idle home reported in use", e)
+		}
+		holdLock(t, shm, func() {
+			if inUse, e := codexHomeInUse(home); e != nil || !inUse {
+				t.Fatal("open database not detected", shm, e)
+			}
+			if e := applySharing(root, "2", true, false); e == nil || !strings.Contains(e.Error(), "is open") {
+				t.Fatal("changed sharing for an open profile", e)
+			}
+		})
+		if inUse, e := codexHomeInUse(home); e != nil || inUse {
+			t.Fatal("closed database still reported in use", e)
+		}
 	}
 }
