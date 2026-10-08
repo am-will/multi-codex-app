@@ -18,6 +18,9 @@ type Profile struct {
 	UserDataDir  string `json:"userDataDir"`
 	LauncherPath string `json:"launcherPath,omitempty"`
 	IconColor    string `json:"iconColor,omitempty"`
+	// Sharing links this profile's chats or memories to the sharing owner's copies.
+	ShareChats    bool `json:"shareChats,omitempty"`
+	ShareMemories bool `json:"shareMemories,omitempty"`
 }
 type Config struct {
 	Version         int              `json:"version"`
@@ -27,6 +30,8 @@ type Config struct {
 	Profiles        []Profile        `json:"profiles"`
 	LegacyLaunchers []LauncherBackup `json:"legacyLaunchers,omitempty"`
 	RemovedProfiles []Profile        `json:"removedProfiles,omitempty"`
+	// SharingOwner holds the shared chats and memories; profile 1 when empty.
+	SharingOwner string `json:"sharingOwner,omitempty"`
 }
 
 func stateRoot() string {
@@ -85,6 +90,14 @@ func validateConfig(c Config) error {
 	}
 	if len(c.Profiles) == 0 && len(c.RemovedProfiles) == 0 {
 		return errors.New("no profiles configured")
+	}
+	if c.SharingOwner != "" && !seen[c.SharingOwner] {
+		return errors.New("the sharing owner must be a configured profile")
+	}
+	for _, p := range append(append([]Profile(nil), c.Profiles...), c.RemovedProfiles...) {
+		if p.ID == sharingOwnerID(c) && (p.ShareChats || p.ShareMemories) {
+			return errors.New("the sharing owner holds the shared data and cannot share with itself")
+		}
 	}
 	return validateNames(c.Profiles)
 }
