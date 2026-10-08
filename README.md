@@ -1,129 +1,191 @@
-# multi-codex-app
+# Multi Codex App
 
-Independent Codex desktop profiles, named launchers, and a connection chooser.
+**Run more than one Codex account at the same time.**
 
-![Native macOS connection chooser](docs/chooser.png)
+Multi Codex App gives each of your Codex accounts its own copy of the Codex desktop app, with its own name, Dock icon, sign-in, chats, and plugins. Your personal and work accounts can stay open side by side, so you never have to sign out to switch.
 
-**Methodology credit: [Edi Hasaj](https://edihasaj.com)** and his guide, **[How to Run Two Codex Accounts on macOS with Separate Profiles](https://edihasaj.com/posts/two-codex-accounts-two-dock-icons-macos)**. This project builds on his `CODEX_HOME` plus Electron user-data-directory approach with a permanent installer, more profiles, and OAuth routing. It is an independent community project; no OpenAI or Edi endorsement is implied. Edi's installer code is not redistributed.
+https://github.com/user-attachments/assets/de21fbea-44f5-4a70-a849-11caee7e6e9d
+
+## What you get
+
+- **A separate app for each account.** Launchers like "Codex Personal" and "Codex Work" each open their own Codex, signed in to their own account.
+- **Names and colors you choose.** Five icon colors make each one easy to spot in the Dock, Spotlight, and Raycast.
+- **Plugins per account.** Connect Gmail, GitHub, Figma, and more in one app without touching the others. You can connect the same plugin in several apps, each with its own login.
+- **Everything runs at once.** Open as many as you need, side by side.
+- **A one-line install.** A short setup wizard handles the rest.
+
+<p align="center"><img src="docs/icons.png" alt="The five icon colors: white, yellow, blue, purple, and teal" width="640"></p>
 
 ## Install
 
-Install the official desktop app first. On **macOS or Linux**:
+**Before you start:** install the official Codex desktop app.
+
+**On macOS or Linux,** paste this into Terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/am-will/multi-codex-app/main/install.sh | sh
 ```
 
-The setup wizard first scans the existing installation and prints a report of Codex Desktop, helper integration, saved profiles, installed launcher names, and actual icon colors. Missing launchers, changed names/colors, and leftover managed or Edi launchers are shown before the first question. Then it asks how many profiles you want **in total**, including Primary, then lets you name every profile, choose each icon color, and review the result before installing a permanent CLI and helper. Released macOS binaries need no Node, Go, Swift, or Xcode.
+You don't need Node, Go, Swift, or Xcode. The installer opens a short setup wizard:
 
-Unattended installation:
+1. **It checks what you already have:** the Codex app, the helper, and any profiles or launchers from an earlier setup. It only looks; nothing changes until you confirm.
+2. **You choose how many accounts you want in total,** including the one you use today.
+3. **You name each one and pick its icon color** (type a color name or a number from 1 to 5).
+4. **You review the plan, then it installs.**
+
+<p align="center"><img src="docs/wizard.png" alt="The setup wizard showing the current installation and the options to set up, edit one profile, or add and remove one" width="620"></p>
+
+When it's done, open each new app and sign in with the account you want it to use. Nothing is copied between accounts.
+
+Run `multi-codex-app wizard` any time to come back. You can redo the full setup, edit one profile's name or color, or add and remove a single profile.
+
+<details>
+<summary><b>Other ways to install</b> (skip the wizard, Windows, Linux)</summary>
+
+<br>
+
+**Skip the wizard** and create three profiles with default names and colors:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/am-will/multi-codex-app/main/install.sh | sh -s -- --count 3
 ```
 
-Supply `--app /absolute/path/to/ChatGPT.app` if detection fails. Linux needs a compatible installed desktop executable, `xdg-mime`, Python 3, and Tk (`python3-tk` on Debian/Ubuntu). This tool does not download or patch a Linux desktop distribution.
+If the installer can't find the Codex app, add `--app /absolute/path/to/ChatGPT.app`.
 
-If `~/.local/bin` is missing from your PATH, add this to your shell configuration:
+**"Command not found"?** Add `~/.local/bin` to your PATH, for example in `~/.zshrc`:
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-**Windows (experimental)** — download and inspect, then run in PowerShell:
+**Linux** needs a compatible desktop app already installed, plus `xdg-mime`, Python 3, and Tk (`python3-tk` on Debian and Ubuntu). This tool doesn't download or patch a Linux desktop app.
+
+**Windows (experimental):** download the script, read it, then run it in PowerShell. Point `-App` at the desktop app, not the Codex CLI:
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/am-will/multi-codex-app/main/install.ps1 -OutFile install-multi-codex.ps1
 .\install-multi-codex.ps1 -Count 3 -App 'C:\path\to\ChatGPT.exe'
 ```
 
-Use the desktop executable, not the Codex CLI. Store-managed installs may need an explicit executable path and Default Apps selection. Open a new terminal after installing for the CLI to appear on PATH.
+Store-managed installs may need the exact path to the app and a change in Default Apps. Open a new terminal afterwards so the CLI is on your PATH.
 
-Installers verify release SHA-256 checksums before running the binary. Checksums protect download integrity and are published alongside artifacts. Releases are not notarized or developer-certificate signed. Do not disable OS security protections to run this tool. Inspect [install.sh](install.sh), [install.ps1](install.ps1), or build the source yourself.
+**Is it safe to run?** The installers check each release's SHA-256 checksum before running it. Releases are not notarized or code-signed, so read [install.sh](install.sh) or [install.ps1](install.ps1) first, or build from source. Don't turn off your system's security settings to run it.
 
-## Use
+</details>
 
-![Terminal wizard installation report](docs/wizard.png)
+## Connecting plugins
 
-The terminal wizard uses section headings, colored icon swatches, and a final review. Choose colors by name or number (1–5). `NO_COLOR` and `TERM=dumb` disable ANSI styling; redirected reports use plain text. The installation scan reads launcher metadata and icon artwork without modifying existing settings. Windows reads shortcut metadata through PowerShell; Linux reads desktop entries.
+When you connect a plugin such as Gmail, Codex sends you to your browser to approve it. The browser then hands the approval back to Codex. With several Codex apps open, Multi Codex needs to know which one should get it, so it asks:
+
+<p align="center"><img src="docs/chooser.png" alt="The Choose a Codex profile window listing three running profiles" width="380"></p>
+
+1. In the Codex app you want, start connecting the plugin.
+2. Approve it in your browser. Make sure you're signed in to the right account there first. The browser doesn't know which Codex app you started from.
+3. When **Choose a Codex profile** appears, pick that same app and click **Continue**.
+
+The plugin is added to that app only. To use the same plugin in another app, connect it there too, with whichever account you like. On macOS, apps that aren't running are greyed out, and nothing is selected for you.
+
+> [!TIP]
+> After opening Codex, wait a few seconds before connecting a plugin. Codex takes over the login link when it starts, and Multi Codex takes it back within about ten seconds.
+
+On macOS, the menu-bar helper also lists all your profiles and can show a preview of the chooser.
+
+## Everyday commands
+
+| Command | What it does |
+| --- | --- |
+| `multi-codex-app wizard` | Open the setup wizard: full setup, edit one profile, or add or remove one |
+| `multi-codex-app list` | Show your profiles with their numbers, names, and colors |
+| `multi-codex-app launch 2` | Open profile 2, or bring it to the front |
+| `multi-codex-app rename 2 Work` | Rename profile 2 to "Codex Work" |
+| `multi-codex-app icon 2 yellow` | Change profile 2's icon color |
+| `multi-codex-app icons` | Show the five colors: white, yellow, blue, purple, teal |
+| `multi-codex-app add` | Add more profiles (guided) |
+| `multi-codex-app remove 4` | Remove profile 4's launcher but keep its data |
+| `multi-codex-app restore 4` | Bring profile 4 back with its data |
+| `multi-codex-app list --removed` | Show removed profiles you can restore |
+| `multi-codex-app update` | Install the newest release and keep your profiles |
+| `multi-codex-app doctor` | Check paths and login-link routing |
+| `multi-codex-app uninstall` | Remove the integration but keep your data |
+
+<details>
+<summary><b>More about managing profiles</b></summary>
+
+<br>
+
+- **Names.** `rename 2 Work` creates **Codex Work**. A name that already starts with "Codex" is used as written, so `rename 3 "Codex (My Company)"` creates **Codex (My Company)**. Names show up in the chooser, the helper menu, and the app launcher. Duplicate names, and names with characters your file system doesn't allow, are rejected.
+- **Numbers never change.** A profile keeps its number, data folder, and sign-in when you rename it or change its color. New profiles never reuse the number or data of a removed one.
+- **Colors.** The first five profiles get white, yellow, blue, purple, and teal, in that order, and later ones repeat. Your choice sticks through renames, setup, and updates. The same artwork is used for launchers, Spotlight and Raycast results, the helper menu, and the chooser.
+- **Adding.** `add` walks you through the new profiles. `add --count 2` adds two with default names and colors.
+- **Full setup** never removes profiles or replaces sign-ins. `setup --count 6` makes sure you have six in total, and `update` keeps all your current choices.
+- **Removing.** `remove ID` takes away that profile's launcher and Dock icon but keeps its sign-in, chats, settings, and data. It doesn't close a window that's already open. Removing your last profile also removes the helper. `restore ID` brings a profile back, as long as its name doesn't clash with another launcher.
+- **Plain text.** Set `NO_COLOR=1` or `TERM=dumb` to turn off the wizard's colors.
+
+</details>
+
+## Good to know
+
+- **Dock grouping.** On macOS your colored launchers sit in the Dock, but running windows may still group under the original Codex icon. macOS groups windows by the signed app, and launchers can't change that.
+- **Nothing is merged.** Each account keeps its own usage limits, billing, and chats. Your web browser is shared, so pick the right account there when you approve a plugin.
+- **Spotlight and Raycast.** Launchers are installed in `~/Applications`, so Spotlight and Raycast find them. Raycast can take a moment to notice new ones. If it doesn't, add `~/Applications` to its search scope.
+- **Dock pins.** New launchers are pinned to the Dock unless you pass `--no-dock`. On Windows and Linux, pin the shortcuts yourself.
+- **Your data stays put.** Removing a profile or uninstalling keeps your sign-ins and chats.
+- **Login links stay private.** They're handled in memory and never logged or saved. On macOS each one goes only to the app you pick, and never falls back to another account.
+- **Codex itself is untouched.** The official, signed Codex app is never modified.
+
+## Platform support
+
+| | macOS 13+ (Apple silicon and Intel) | Windows (arm64 and x64) | Linux (arm64 and x64) |
+| --- | --- | --- | --- |
+| Profiles and the CLI | Tested | Tested in CI | Tested in CI |
+| Opening each app | Tested | Experimental, not yet verified | Experimental, not yet verified |
+| Plugin chooser | Native app, tested | Experimental, not yet verified | Experimental, not yet verified |
+| Launchers | Dock apps | Start menu shortcuts | Desktop entries |
+
+On Windows and Linux, the chooser hands the login link to the desktop app for the profile you pick. That relies on how your copy of the desktop app handles multiple instances, so it can differ between package formats. If another app takes over the login link, run setup again or choose the helper in your Default Apps settings.
+
+<details>
+<summary><b>How it works</b></summary>
+
+<br>
+
+Each profile has its own Codex data folder (`CODEX_HOME`) and its own desktop app data folder. Each launcher opens the official Codex app with that profile's folders, so every instance keeps its own sign-in, chats, settings, and plugins.
+
+When a plugin finishes signing in, your browser opens a Codex login link. Multi Codex registers itself to receive those links, asks which profile should get each one, and passes it on. On macOS it sends the link straight to the exact app you picked. It rechecks every ten seconds, because Codex claims the link again whenever it starts.
+
+**If you already use Codex.** Your current account becomes profile 1 ("Primary") and keeps using `~/.codex` and its normal app data. On macOS, if you already have both `~/.codex-work` and `~/Library/Application Support/Codex Second` from a two-account setup, profile 2 ("Secondary") takes those over. Every other profile gets new private folders. Sign-ins are never copied between profiles.
+
+**Coming from Edi's setup.** His Account Switcher stays installed and its shortcuts keep working. If his Primary and Secondary launchers are replaced, the originals are backed up under `retired-launchers/` and restored on uninstall if their old locations are free. Other apps are never overwritten just because their names match. The earlier local "Codex Callback Router" login agent is retired, and its app and disabled agent file are kept.
+
+**Where your settings live:**
+
+- macOS: `~/Library/Application Support/Multi Codex/`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/multi-codex-app/`
+- Windows: `%LOCALAPPDATA%\MultiCodex\`
+
+Each holds `config.json`, the CLI in `bin/`, and the extra profiles in `profiles/`. You can change a profile's folders in `config.json` while that profile is closed. `MULTI_CODEX_ROOT` points the tool at a different folder for development. Don't use a temporary folder for a real install, because the launchers remember that location.
+
+</details>
+
+<details>
+<summary><b>Uninstall</b></summary>
+
+<br>
 
 ```sh
-multi-codex-app wizard            # report, then setup / edit / add-remove picker
-multi-codex-app list
-multi-codex-app list --removed    # retained profiles available to restore
-multi-codex-app launch 2
-multi-codex-app rename 2 Work
-multi-codex-app rename 3 "Codex (Personal)"
-multi-codex-app icons             # white, yellow, blue, purple, teal
-multi-codex-app icon 2 yellow     # one profile
-multi-codex-app icon 3 blue
-multi-codex-app add               # asks how many additional profiles
-multi-codex-app add --count 2     # adds two profiles
-multi-codex-app setup --count 6   # refreshes six total profiles
-multi-codex-app update
-multi-codex-app doctor
-multi-codex-app remove 4          # removes this launcher; retains its data
-multi-codex-app restore 4         # restores the same ID and saved data
 multi-codex-app uninstall
 ```
 
-Running `multi-codex-app` without arguments, or `setup` without `--count`, opens the wizard. After the installation report, the wizard offers three paths:
+This restores the login-link handler you had before and removes the helper, the launchers, and their Dock pins. It keeps the CLI, `config.json`, and all profile data, so you don't lose sign-ins or chats. Run `multi-codex-app setup` to turn it back on. If you want to delete everything, back up your profile data before removing the folder by hand.
 
-1. **Full setup:** choose a total count, then customize the names and colors.
-2. **Edit one existing profile:** pick its number from the list, then change its name, color, or both. Other launchers are left in place.
-3. **Add/remove one:** add a profile with an unused number, name, and color, or pick one to remove. Each operation has its own review.
+</details>
 
-Run `wizard` again any time to manage individual profiles. Editing or adding one updates only that launcher. Existing profile numbers are permanent identifiers; new numbers can be chosen explicitly and cannot reuse retained data.
+<details>
+<summary><b>Build from source</b></summary>
 
-`add` without `--count` guides you through the new profiles only; `add --count N` uses default names/colors for unattended additions. `setup --count N` and `update` retain existing choices without prompting.
+<br>
 
-`remove ID` removes that profile from the helper and retires its managed launcher/Dock pin. It keeps sign-ins, chats, configuration, and data directories, and records the removed identity under `removedProfiles` in the manifest. It does not close an already running Codex window or delete the official Codex app. Removing the final profile also uninstalls helper integration. `restore ID` reinstates the same saved profile; its name must not conflict with an active launcher. `list --removed` shows retained IDs. Removed IDs and existing profile directories are reserved to prevent a new instance from inheriting another account’s state.
-
-Full setup never removes profiles or replaces their authentication. Sign into each new profile separately. Names appear in the chooser, helper menu, and OS launcher. `rename 2 Work` creates **Codex Work**; a name beginning with Codex is used as written, so `rename 2 "Codex (My Company)"` creates **Codex (My Company)**. IDs, data directories, and sign-ins stay attached to the same profile. Duplicate launcher names and names containing filesystem-reserved characters are rejected.
-
-On macOS the installer creates named apps directly in `~/Applications` and registers them with Launch Services for Spotlight and Raycast. Earlier numbered launchers are migrated, preserving existing Dock pin positions. Raycast can take a moment to refresh its application index; add `~/Applications` to its application search scope if needed. New launchers are pinned to the Dock by default. Use `--no-dock` to skip pins. Running Codex windows may still group under the official icon: separate launcher pins cannot change the signed app's running identity. Windows creates Start-menu shortcuts; Linux creates desktop entries. Pin those manually using your OS.
-
-Five icon colors are available: **white, yellow, blue, purple, and teal**. The first five profiles default to those colors in order; later profiles repeat the palette. `icon ID COLOR` changes one profile, and the choice persists across rename/setup/update. The OpenAI mark uses dark lines on white/yellow and white lines on blue/purple/teal, with at least 4.5:1 contrast. macOS uses the same artwork for launcher pins, Spotlight/Raycast results, helper menu rows, and chooser cards; Windows shortcuts use ICO files and Linux desktop entries use PNGs. Icons for the running official app may still group under its original identity.
-
-![Five profile icon colors](docs/icons.png)
-
-The macOS menu-bar helper lists all profiles and offers a chooser preview. Start **Connect** in the intended profile, authorize in your browser, select that same profile, and click **Continue**. Closed or ambiguous processes are disabled on macOS; no account is preselected. Browser account selection is independent—choose the correct provider/ChatGPT account before authorizing.
-
-## Platform status
-
-| Feature | macOS 13+ arm64/x64 | Windows arm64/x64 | Linux arm64/x64 |
-| --- | --- | --- | --- |
-| CLI and profile management | Locally tested | CI-tested | CI-tested |
-| Desktop launch | Locally tested | Experimental; runtime unverified | Experimental; runtime unverified |
-| Chooser and forwarding | Native AppKit; exact PID delivery tested | WPF; forwarding unverified | Tk; forwarding unverified |
-| Launchers | Dock apps | Start-menu shortcuts | Desktop entries |
-| Real provider OAuth completion | User authorization required | Unverified | Unverified |
-
-Windows/Linux forwarding invokes the desktop app with the selected user-data directory and original deep link, relying on Electron's profile-specific instance handling. Compatibility depends on the desktop distribution. Passing builds do not prove callback behavior across package formats. macOS sends an Apple Event directly to the selected running process.
-
-## Existing profiles and state
-
-Primary adopts `~/.codex` and normal desktop state. On macOS, if both `~/.codex-work` and `~/Library/Application Support/Codex Second` exist, Secondary adopts them. Other profiles get new private directories. No credentials are copied between accounts.
-
-The earlier local `Codex Callback Router` login agent is retired, with its app and disabled agent file retained. Edi's Account Switcher remains installed and its shortcuts continue to work. When replacing his Primary/Secondary launcher wrappers, their original apps are backed up under `retired-launchers/`; uninstall restores them if the original paths are vacant. Other apps are never overwritten merely because their names match.
-
-State lives in:
-
-- macOS: `~/Library/Application Support/Multi Codex/`.
-- Linux: `${XDG_DATA_HOME:-~/.local/share}/multi-codex-app/`.
-- Windows: `%LOCALAPPDATA%\MultiCodex\`.
-
-Each has `config.json`, the permanent CLI under `bin/`, and additional profiles under `profiles/`. Custom setups can edit the manifest's paths while the relevant profile is closed. `MULTI_CODEX_ROOT` selects another tool root for development; don't use a temporary location for real installs, because launchers persist that location.
-
-OAuth callbacks stay in memory; this helper does not log or save their URLs or codes. macOS forwards the original URL only to the selected PID. It never falls back to another account after failure. The original signed Codex app is not modified. This does not merge account limits, billing, chats, or browser sessions.
-
-macOS rechecks the handler every ten seconds because Codex reclaims it at startup. Wait a few seconds after opening Codex before connecting. On Windows/Linux, re-run setup or select the helper in Default Apps if another application reclaims the handler.
-
-`uninstall` restores the saved prior handler and removes helper integration and managed launchers/pins. It retains the CLI, manifest, and profile data so sign-ins and chats are not lost. `setup` reinstalls integration. Back up profile data before manually deleting the remaining directory.
-
-## Build
-
-Go 1.24+; standard library only. Source builds on macOS also need Apple's Swift tools:
+You need Go 1.24 or newer (standard library only). On macOS you also need Apple's Swift tools.
 
 ```sh
 sh scripts/build.sh
@@ -131,8 +193,16 @@ go test ./...
 go vet ./...
 ```
 
-The macOS build embeds a universal native helper. Releases compile six OS/architecture binaries. CI runs Go tests on all three OSes and checks Swift compilation plus PowerShell/Python syntax.
+The macOS build embeds a universal native helper. Each release includes binaries for six operating system and architecture combinations. CI runs the Go tests on all three operating systems and checks the Swift, PowerShell, and Python code.
+
+</details>
+
+## Credits
+
+The idea comes from **[Edi Hasaj](https://edihasaj.com)** and his guide, **[How to Run Two Codex Accounts on macOS with Separate Profiles](https://edihasaj.com/posts/two-codex-accounts-two-dock-icons-macos)**. This project builds on his approach of a separate `CODEX_HOME` and app data folder per account, and adds a permanent installer, more profiles (up to 100), and plugin login routing.
+
+This is an independent community project. No endorsement by OpenAI or Edi is implied, and Edi's installer code isn't included.
 
 ## License
 
-MIT for this project's original code. Methodology credit belongs to Edi Hasaj. OpenAI, ChatGPT, and Codex trademarks belong to their owners. The OpenAI mark in profile icons belongs to OpenAI and is excluded from the MIT license; see [icon attribution](cmd/multi-codex-app/assets/icons/README.md).
+MIT for this project's own code. OpenAI, ChatGPT, and Codex are trademarks of their owners. The OpenAI mark in the profile icons belongs to OpenAI and isn't covered by the MIT license. See the [icon notes](cmd/multi-codex-app/assets/icons/README.md).
