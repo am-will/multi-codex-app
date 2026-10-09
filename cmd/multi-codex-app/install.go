@@ -75,6 +75,9 @@ func installIntegration(root string, c *Config, dock bool, onlyIDs ...string) er
 		if e := extractAsset("windows/chooser.ps1", filepath.Join(root, "chooser.ps1"), 0600); e != nil {
 			return e
 		}
+		if e := extractAsset("windows/window-identity.ps1", filepath.Join(root, "window-identity.ps1"), 0600); e != nil {
+			return e
+		}
 		if e := extractAsset("windows/integrate.ps1", filepath.Join(root, "integrate.ps1"), 0600); e != nil {
 			return e
 		}
