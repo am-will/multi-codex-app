@@ -90,8 +90,11 @@ do {
             $_.CommandLine -notmatch '--type='
         } | Select-Object -First 1
     if ($process) {
-        $window = (Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue).MainWindowHandle
-        if ($window -ne [IntPtr]::Zero) { break }
+        $running = Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue
+        if ($running) {
+            $window = $running.MainWindowHandle
+            if ($window -ne [IntPtr]::Zero) { break }
+        }
     }
     Start-Sleep -Milliseconds 500
 } while ((Get-Date) -lt $deadline)
