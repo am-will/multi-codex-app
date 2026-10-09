@@ -121,6 +121,18 @@ func launch(c Config, p Profile, uri string) error {
 		return errors.New("could not start the selected desktop profile")
 	}
 	go func() { _ = cmd.Wait() }()
+	if runtime.GOOS == "windows" && p.ID != "1" {
+		// The Start-menu shortcut icon does not give the unpackaged Electron
+		// window an identity. Apply the profile icon once its window appears.
+		identity := filepath.Join(stateRoot(), "window-identity.ps1")
+		if _, e := os.Stat(identity); e == nil {
+			icon := exec.Command("powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-File", identity,
+				"-ConfigPath", filepath.Join(stateRoot(), "config.json"), "-ProfileID", p.ID)
+			if icon.Start() == nil {
+				go func() { _ = icon.Wait() }()
+			}
+		}
+	}
 	return nil
 }
 func validateURI(raw string) error {
