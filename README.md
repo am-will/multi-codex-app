@@ -70,6 +70,8 @@ Invoke-WebRequest https://raw.githubusercontent.com/am-will/multi-codex-app/main
 
 Store-managed installs may need the exact path to the app and a change in Default Apps. Open a new terminal afterwards so the CLI is on your PATH.
 
+If a secondary profile shows **"Windows setup didn't finish"**, see [Windows sandbox troubleshooting](docs/windows-sandbox.md). Each profile has its own Codex configuration, so a sandbox setting that works in the original app may not apply to the new one.
+
 **Is it safe to run?** The installers check each release's SHA-256 checksum before running it. Releases are not notarized or code-signed, so read [install.sh](install.sh) or [install.ps1](install.ps1) first, or build from source. Don't turn off your system's security settings to run it.
 
 </details>
