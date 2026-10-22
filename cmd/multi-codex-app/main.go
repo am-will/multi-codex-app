@@ -52,7 +52,7 @@ func run(args []string) error {
 			return errors.New("usage: multi-codex-app list [--removed]")
 		}
 		for _, p := range entries {
-			fmt.Printf("%s  %-24s  %s\n", p.ID, p.Name, iconColor(p))
+			fmt.Printf("%s  %-24s  %s\n", p.ID, launcherName(p), iconColor(p))
 		}
 		return nil
 	case "launch":
@@ -93,6 +93,12 @@ func run(args []string) error {
 		return setIcon(args[1], args[2])
 	case "share":
 		return shareCommand(args[1:])
+	case "run":
+		return runCommand(args[1:])
+	case "env":
+		return envCommand(args[1:])
+	case "shell-init":
+		return shellInitCommand(args[1:])
 	case "callback":
 		if len(args) != 2 {
 			return errors.New("expected one callback URL")
@@ -120,6 +126,7 @@ const help = `multi-codex-app — independent Codex desktop profiles
   wizard                                    Setup, edit a profile, or add/remove one
   setup [--count N] [--app PATH] [--no-dock]  Install or refresh; wizard without N
   add [--count N]                            Add N more profiles (guided without N)
+  add --claude [--count N] [--claude-app PATH]  Add Claude profiles (the first uses Claude's own account)
   remove ID                                 Remove one launcher; retain profile data
   restore ID                                Restore a removed profile and its data
   list                                      Show profile IDs, names, and icon colors
@@ -130,6 +137,10 @@ const help = `multi-codex-app — independent Codex desktop profiles
   share                                     Show who shares chats and memories
   share ID all|chats|memories|off           Share chats and/or memories, or stop
   share owner ID                            Choose the profile holding shared data
+  run ID [-- ARGS]                          Run the codex or claude CLI as that profile
+  env ID                                    Print the line that points a shell at that profile
+  shell-init                                Print commands like codex-work and claude-personal:
+                                              eval "$(multi-codex-app shell-init)"
   update                                    Install the newest release, keeping profiles
   doctor                                    Check paths and callback routing (no tokens)
   uninstall                                 Remove integration; preserve profile data
@@ -145,11 +156,19 @@ func setup(args []string, add bool) error {
 	app := fs.String("app", "", "installed desktop app path")
 	noDock := fs.Bool("no-dock", false, "do not pin macOS launchers")
 	forceWizard := fs.Bool("wizard", false, "choose names and colors interactively")
+	claude := fs.Bool("claude", false, "add Claude profiles instead of Codex profiles")
+	claudeApp := fs.String("claude-app", "", "installed Claude desktop app path")
 	if e := fs.Parse(args); e != nil {
 		return e
 	}
 	if fs.NArg() != 0 {
 		return errors.New("unexpected setup arguments")
+	}
+	if *claude || *claudeApp != "" {
+		if !add {
+			return errors.New("use add --claude to add Claude profiles")
+		}
+		return addClaude(stateRoot(), *n, *claudeApp, !*noDock)
 	}
 	root := stateRoot()
 	c, e := readConfig(root)
@@ -275,6 +294,72 @@ func setup(args []string, add bool) error {
 	}
 	return persistInstallation(root, &c, !*noDock)
 }
+
+// addClaude adds Claude profiles to an existing installation.
+func addClaude(root string, n int, appFlag string, pin bool) error {
+	c, e := readConfig(root)
+	if errors.Is(e, os.ErrNotExist) {
+		return errors.New("run setup before adding profiles")
+	}
+	if e != nil {
+		return fmt.Errorf("cannot use saved configuration: %w", e)
+	}
+	var wizard *wizardPrompt
+	if n == 0 {
+		if wizard, e = openWizard(); e != nil {
+			return e
+		}
+		defer wizard.close()
+		wizard.banner()
+		wizard.section("02", "ADD CLAUDE PROFILES")
+		if n, e = wizard.count("How many Claude profiles to add?", 1); e != nil {
+			return e
+		}
+	}
+	if n < 1 {
+		return errors.New("add count must be positive")
+	}
+	first := len(c.Profiles)
+	for i := 0; i < n; i++ {
+		id, e := nextProfileID(c, root)
+		if e != nil {
+			return e
+		}
+		if e = appendClaudeProfile(&c, id, root); e != nil {
+			return e
+		}
+	}
+	if appFlag != "" {
+		if c.ClaudeAppPath, e = filepath.Abs(appFlag); e != nil {
+			return e
+		}
+		if e = checkApp(c.ClaudeAppPath); e != nil {
+			return e
+		}
+	} else if c.ClaudeAppPath == "" {
+		if c.ClaudeAppPath, e = detectClaudeApp(); e != nil {
+			fmt.Println(e)
+		}
+	}
+	if wizard != nil {
+		if e = wizard.appearance(&c, first); e != nil {
+			return e
+		}
+		apply, err := wizard.review(c, pin)
+		if err != nil {
+			return err
+		}
+		if !apply {
+			fmt.Fprintln(wizard.out, "Cancelled. Settings were not applied.")
+			return nil
+		}
+	}
+	var ids []string
+	for _, p := range c.Profiles[first:] {
+		ids = append(ids, p.ID)
+	}
+	return persistInstallation(root, &c, pin, ids...)
+}
 func persistInstallation(root string, c *Config, pin bool, onlyIDs ...string) error {
 	cliName := "multi-codex-app"
 	if runtime.GOOS == "windows" {
@@ -299,8 +384,10 @@ func persistInstallation(root string, c *Config, pin bool, onlyIDs ...string) er
 		}
 	}
 	for _, p := range c.Profiles {
-		if e = os.MkdirAll(p.CodexHome, 0700); e != nil {
-			return e
+		if _, home := accountVariable(p); home != "" {
+			if e = os.MkdirAll(home, 0700); e != nil {
+				return e
+			}
 		}
 		if p.UserDataDir != "" {
 			if e = os.MkdirAll(p.UserDataDir, 0700); e != nil {

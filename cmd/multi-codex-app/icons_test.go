@@ -35,7 +35,15 @@ func TestIconContrastAndArtifacts(t *testing.T) {
 		if ratio := (a + .05) / (b + .05); ratio < 4.5 {
 			t.Errorf("%s contrast %.2f too low", p.Name, ratio)
 		}
-		raw, e := assets.ReadFile("assets/icons/" + p.Name + ".png")
+		for _, name := range []string{p.Name, "claude-" + p.Name} {
+			checkIconArtifacts(t, name)
+		}
+	}
+}
+func checkIconArtifacts(t *testing.T, name string) {
+	t.Helper()
+	{
+		raw, e := assets.ReadFile("assets/icons/" + name + ".png")
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -50,7 +58,7 @@ func TestIconContrastAndArtifacts(t *testing.T) {
 		if alpha != 0 {
 			t.Fatal("icon corners must be transparent")
 		}
-		raw, e = assets.ReadFile("assets/icons/" + p.Name + ".ico")
+		raw, e = assets.ReadFile("assets/icons/" + name + ".ico")
 		if e != nil {
 			t.Fatal(e)
 		}

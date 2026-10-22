@@ -50,7 +50,9 @@ New-Item -ItemType Directory -Path $menu -Force | Out-Null
 $shell = New-Object -ComObject WScript.Shell
 foreach ($profile in $config.profiles) {
     $displayName = $profile.name.Trim()
-    if ($displayName -notmatch '^Codex[ (]') { $displayName = 'Codex ' + $displayName }
+    $label = 'Codex'
+    if ($profile.app -eq 'claude') { $label = 'Claude' }
+    if ($displayName -notmatch ('^' + $label + '[ (]')) { $displayName = $label + ' ' + $displayName }
     $destination = Join-Path $menu ($displayName + '.lnk')
     $arguments = '--root "' + $root + '" launch ' + $profile.id
     if (Test-Path -LiteralPath $destination) {
@@ -70,7 +72,9 @@ foreach ($profile in $config.profiles) {
     $shortcut.TargetPath = $config.cliPath
     $shortcut.Arguments = $arguments
     $shortcut.Description = $profile.name
-    $shortcut.IconLocation = (Join-Path $root ('icons\' + $profile.iconColor + '.ico')) + ',0'
+    $iconName = $profile.iconColor
+    if ($profile.app -eq 'claude') { $iconName = 'claude-' + $iconName }
+    $shortcut.IconLocation = (Join-Path $root ('icons\' + $iconName + '.ico')) + ',0'
     $shortcut.WorkingDirectory = $root
     $shortcut.Save()
 }

@@ -31,7 +31,7 @@ func removeProfileAt(root string, c Config, id, home string) error {
 	if e != nil {
 		return e
 	}
-	if current.Name != expected.Name || current.CodexHome != expected.CodexHome || current.UserDataDir != expected.UserDataDir {
+	if current.Name != expected.Name || current.CodexHome != expected.CodexHome || current.UserDataDir != expected.UserDataDir || current.ClaudeConfigDir != expected.ClaudeConfigDir {
 		return errors.New("this profile changed while the wizard was open; select it again")
 	}
 	c = latest
@@ -107,7 +107,11 @@ func removeProfileAt(root string, c Config, id, home string) error {
 	if e = saveConfig(root, next); e != nil {
 		return e
 	}
-	fmt.Printf("Removed #%s (%s). Saved profile data retained at %s", p.ID, p.Name, p.CodexHome)
+	_, kept := accountVariable(p)
+	if kept == "" {
+		kept = "the app's default folder"
+	}
+	fmt.Printf("Removed #%s (%s). Saved profile data retained at %s", p.ID, p.Name, kept)
 	if p.UserDataDir != "" {
 		fmt.Printf(" and %s", p.UserDataDir)
 	}

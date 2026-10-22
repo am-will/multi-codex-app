@@ -161,9 +161,12 @@ func checkSharingChange(c Config, p Profile) error {
 	if e := sharingSupported(); e != nil {
 		return e
 	}
+	if p.isClaude() {
+		return errors.New("sharing chats and memories is only available for Codex profiles")
+	}
 	owner := sharingOwner(c)
 	if p.ID == owner.ID {
-		return fmt.Errorf("#%s %s holds the shared chats and memories; choose another profile", owner.ID, launcherName(owner.Name))
+		return fmt.Errorf("#%s %s holds the shared chats and memories; choose another profile", owner.ID, launcherName(owner))
 	}
 	if filepath.Clean(p.CodexHome) == filepath.Clean(owner.CodexHome) {
 		return fmt.Errorf("#%s already uses the owner's Codex folder", p.ID)
@@ -188,7 +191,7 @@ func checkSharingChange(c Config, p Profile) error {
 		return e
 	}
 	if inUse {
-		return fmt.Errorf("%s is open; quit it, then try again", launcherName(p.Name))
+		return fmt.Errorf("%s is open; quit it, then try again", launcherName(p))
 	}
 	return nil
 }
@@ -257,6 +260,9 @@ func setSharingOwner(root, id string) error {
 	p, e := profile(c, id)
 	if e != nil {
 		return e
+	}
+	if p.isClaude() {
+		return errors.New("the sharing owner must be a Codex profile")
 	}
 	if shared := sharingProfiles(c); len(shared) > 0 {
 		var ids []string

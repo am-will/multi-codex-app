@@ -30,7 +30,7 @@ func shareCommand(args []string) error {
 			return e
 		}
 		owner := sharingOwner(c)
-		fmt.Printf("Shared chats and memories will live in #%s %s.\n", owner.ID, launcherName(owner.Name))
+		fmt.Printf("Shared chats and memories will live in #%s %s.\n", owner.ID, launcherName(owner))
 		return nil
 	case len(args) == 2:
 		chats, memories, e := parseSharingMode(args[1])
@@ -52,7 +52,7 @@ func shareCommand(args []string) error {
 
 func printSharing(w io.Writer, c Config) {
 	owner := sharingOwner(c)
-	fmt.Fprintf(w, "Shared chats and memories live in #%s %s (%s).\n", owner.ID, launcherName(owner.Name), owner.CodexHome)
+	fmt.Fprintf(w, "Shared chats and memories live in #%s %s (%s).\n", owner.ID, launcherName(owner), owner.CodexHome)
 	entries := append([]Profile(nil), c.Profiles...)
 	for _, p := range c.RemovedProfiles {
 		if p.ShareChats || p.ShareMemories {
@@ -60,6 +60,9 @@ func printSharing(w io.Writer, c Config) {
 		}
 	}
 	for i, p := range entries {
+		if p.isClaude() {
+			continue
+		}
 		state := sharingSummary(p.ShareChats, p.ShareMemories)
 		if p.ID == owner.ID {
 			state = "owner"
@@ -67,7 +70,7 @@ func printSharing(w io.Writer, c Config) {
 		if i >= len(c.Profiles) {
 			state += " (removed)"
 		}
-		fmt.Fprintf(w, "%s  %-24s  %s\n", p.ID, terminalText(launcherName(p.Name)), state)
+		fmt.Fprintf(w, "%s  %-24s  %s\n", p.ID, terminalText(launcherName(p)), state)
 	}
 	if sharingSupported() == nil {
 		fmt.Fprintln(w, "Change one: multi-codex-app share ID all|chats|memories|off")
@@ -76,8 +79,8 @@ func printSharing(w io.Writer, c Config) {
 
 func sharingResult(c Config, p Profile, chats, memories bool) string {
 	owner := sharingOwner(c)
-	name := fmt.Sprintf("#%s %s", p.ID, launcherName(p.Name))
-	ownerName := fmt.Sprintf("#%s %s", owner.ID, launcherName(owner.Name))
+	name := fmt.Sprintf("#%s %s", p.ID, launcherName(p))
+	ownerName := fmt.Sprintf("#%s %s", owner.ID, launcherName(owner))
 	var lines []string
 	switch {
 	case chats && memories:

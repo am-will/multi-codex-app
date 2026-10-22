@@ -12,7 +12,7 @@ import (
 
 func fixtureLauncher(t *testing.T, root, home string, p Profile, actualColor string) string {
 	t.Helper()
-	app := filepath.Join(home, "Applications", launcherName(p.Name)+".app")
+	app := filepath.Join(home, "Applications", launcherName(p)+".app")
 	if e := os.MkdirAll(filepath.Join(app, "Contents/Resources"), 0755); e != nil {
 		t.Fatal(e)
 	}

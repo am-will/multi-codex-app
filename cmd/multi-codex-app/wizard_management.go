@@ -71,7 +71,7 @@ func (w *wizardPrompt) pickProfile(c Config) (Profile, bool, error) {
 	w.section("03", "SELECT A PROFILE")
 	s := styleFor(w.out)
 	for _, p := range c.Profiles {
-		fmt.Fprintf(w.out, "     %s  %s  %s\n", s.accent("#"+p.ID), s.paint("1", launcherName(p.Name)), s.icon(iconColor(p)))
+		fmt.Fprintf(w.out, "     %s  %s  %s\n", s.accent("#"+p.ID), s.paint("1", launcherName(p)), s.icon(iconColor(p)))
 	}
 	fmt.Fprintln(w.out, s.dim("     0  Back / exit"))
 	for {
@@ -92,7 +92,7 @@ func (w *wizardPrompt) pickProfile(c Config) (Profile, bool, error) {
 func (w *wizardPrompt) reviewProfile(p Profile, action string) (bool, error) {
 	w.section("04", action)
 	s := styleFor(w.out)
-	fmt.Fprintf(w.out, "     %s  %s  %s\n", s.dim("#"+p.ID), s.paint("1", launcherName(p.Name)), s.icon(iconColor(p)))
+	fmt.Fprintf(w.out, "     %s  %s  %s\n", s.dim("#"+p.ID), s.paint("1", launcherName(p)), s.icon(iconColor(p)))
 	fmt.Fprintln(w.out, s.dim("     Saved sign-ins and profile data are retained."))
 	return w.yesNo("Apply this change?", true)
 }
@@ -148,7 +148,7 @@ func (w *wizardPrompt) editExisting(root string, c Config) error {
 			if e = applyAppearance(root, &c); e != nil {
 				return e
 			}
-			fmt.Fprintf(w.out, "     Updated #%s: %s · %s\n", updated.ID, launcherName(updated.Name), iconColor(updated))
+			fmt.Fprintf(w.out, "     Updated #%s: %s · %s\n", updated.ID, launcherName(updated), iconColor(updated))
 			return nil
 		}
 	}
@@ -239,7 +239,7 @@ func (w *wizardPrompt) removeExisting(root string, c Config) error {
 		return nil
 	}
 	w.section("04", "REMOVE THIS PROFILE")
-	fmt.Fprintf(w.out, "     #%s  %s\n", p.ID, launcherName(p.Name))
+	fmt.Fprintf(w.out, "     #%s  %s\n", p.ID, launcherName(p))
 	fmt.Fprintln(w.out, "     Its launcher and helper entry will be removed. Saved data stays in place.")
 	if len(c.Profiles) == 1 {
 		fmt.Fprintln(w.out, "     With no profiles left, helper integration will also be uninstalled.")

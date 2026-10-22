@@ -19,14 +19,25 @@ type LauncherBackup struct {
 	Backup   string `json:"backup"`
 }
 
-func launcherName(name string) string {
+func appLabel(app string) string {
+	if app == appClaude {
+		return "Claude"
+	}
+	return "Codex"
+}
+
+// launcherTitle names a launcher: "Work" becomes "Codex Work" or "Claude Work". A name that
+// already starts with the app's name is used as written.
+func launcherTitle(app, name string) string {
 	name = strings.TrimSpace(name)
-	lower := strings.ToLower(name)
-	if strings.HasPrefix(lower, "codex ") || strings.HasPrefix(lower, "codex(") {
+	label := appLabel(app)
+	lower, prefix := strings.ToLower(name), strings.ToLower(label)
+	if strings.HasPrefix(lower, prefix+" ") || strings.HasPrefix(lower, prefix+"(") {
 		return name
 	}
-	return "Codex " + name
+	return label + " " + name
 }
+func launcherName(p Profile) string { return launcherTitle(p.App, p.Name) }
 func validateNames(profiles []Profile) error {
 	seen := map[string]bool{}
 	for _, p := range profiles {
@@ -38,10 +49,10 @@ func validateNames(profiles []Profile) error {
 				return errors.New("names cannot contain control characters")
 			}
 		}
-		if strings.EqualFold(p.Name, "Codex") {
+		if strings.EqualFold(p.Name, "Codex") || strings.EqualFold(p.Name, "Claude") {
 			return errors.New("choose a profile-specific name, such as Personal or Codex (Work)")
 		}
-		key := strings.ToLower(launcherName(p.Name))
+		key := strings.ToLower(launcherName(p))
 		if seen[key] {
 			return errors.New("another profile already uses that launcher name")
 		}
@@ -151,10 +162,10 @@ func installMacLaunchers(root string, c *Config, home, helper string, pin bool, 
 	}
 	// Check every destination before changing an existing launcher or its Dock pin.
 	for _, p := range c.Profiles {
-		if !includesProfile(onlyIDs, p.ID) {
+		if !includesProfile(onlyIDs, p.ID) || !hasLauncher(*c, p) {
 			continue
 		}
-		target := filepath.Join(apps, launcherName(p.Name)+".app")
+		target := filepath.Join(apps, launcherName(p)+".app")
 		if _, e := os.Lstat(target); e == nil && !ownsLauncher(target, root, p.ID) && !legacyLauncher(target) {
 			return fmt.Errorf("%s already exists and belongs to another app; choose a different name", target)
 		}
@@ -166,7 +177,7 @@ func installMacLaunchers(root string, c *Config, home, helper string, pin bool, 
 	defer os.RemoveAll(stage)
 	staged := map[string]string{}
 	for _, p := range c.Profiles {
-		if !includesProfile(onlyIDs, p.ID) {
+		if !includesProfile(onlyIDs, p.ID) || !hasLauncher(*c, p) {
 			continue
 		}
 		path := filepath.Join(stage, p.ID+".app")
@@ -193,10 +204,10 @@ func installMacLaunchers(root string, c *Config, home, helper string, pin bool, 
 	}
 	var destinations, relocations []string
 	for i, p := range c.Profiles {
-		if !includesProfile(onlyIDs, p.ID) {
+		if !includesProfile(onlyIDs, p.ID) || !hasLauncher(*c, p) {
 			continue
 		}
-		target := filepath.Join(apps, launcherName(p.Name)+".app")
+		target := filepath.Join(apps, launcherName(p)+".app")
 		// Repair stale Dock bookmarks even when earlier numbered wrappers were retired.
 		numbered := filepath.Join(apps, "Multi Codex Profiles", "Codex Profile "+p.ID+".app")
 		if numbered != target {
@@ -265,7 +276,7 @@ func renameProfile(id, name string) error {
 	if e = applyAppearance(root, &c); e != nil {
 		return e
 	}
-	fmt.Printf("Profile %s is now %s. Launcher: %s\n", p.ID, strings.TrimSpace(name), launcherName(name))
+	fmt.Printf("Profile %s is now %s. Launcher: %s\n", p.ID, strings.TrimSpace(name), launcherTitle(p.App, name))
 	return saveConfig(root, c)
 }
 
@@ -300,6 +311,10 @@ func applyAppearance(root string, c *Config) error {
 	}
 	return saveConfig(root, *c)
 }
+
+// hasLauncher is false for Claude profiles when the Claude desktop app isn't installed; those
+// profiles are used from the terminal with run.
+func hasLauncher(c Config, p Profile) bool { return !p.isClaude() || c.ClaudeAppPath != "" }
 
 func includesProfile(ids []string, id string) bool {
 	if len(ids) == 0 {

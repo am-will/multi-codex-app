@@ -56,13 +56,16 @@ func (w *wizardPrompt) shareSettings(root string) error {
 func (w *wizardPrompt) sharingOverview(c Config) {
 	s := styleFor(w.out)
 	owner := sharingOwner(c)
-	fmt.Fprintf(w.out, "     Shared chats and memories live in %s's folder (the owner).\n\n", terminalText(launcherName(owner.Name)))
+	fmt.Fprintf(w.out, "     Shared chats and memories live in %s's folder (the owner).\n\n", terminalText(launcherName(owner)))
 	for _, p := range c.Profiles {
+		if p.isClaude() {
+			continue
+		}
 		state := sharingSummary(p.ShareChats, p.ShareMemories)
 		if p.ID == owner.ID {
 			state = "owner"
 		}
-		fmt.Fprintf(w.out, "     %s  %s  %s  %s\n", s.accent("#"+p.ID), s.paint("1", launcherName(p.Name)), s.icon(iconColor(p)), s.dim(state))
+		fmt.Fprintf(w.out, "     %s  %s  %s  %s\n", s.accent("#"+p.ID), s.paint("1", launcherName(p)), s.icon(iconColor(p)), s.dim(state))
 	}
 	fmt.Fprintln(w.out)
 	for _, line := range []string{
@@ -121,7 +124,7 @@ func (w *wizardPrompt) shareEvery(root string, c Config, chats, memories bool) e
 	owner := sharingOwner(c)
 	var targets []Profile
 	for _, p := range c.Profiles {
-		if p.ID != owner.ID && (p.ShareChats != chats || p.ShareMemories != memories) {
+		if p.ID != owner.ID && !p.isClaude() && (p.ShareChats != chats || p.ShareMemories != memories) {
 			targets = append(targets, p)
 		}
 	}
@@ -158,7 +161,7 @@ func (w *wizardPrompt) reviewSharing(targets []Profile, chats, memories bool) (b
 	s := styleFor(w.out)
 	ownDataAside, chatsLeave := false, false
 	for _, p := range targets {
-		fmt.Fprintf(w.out, "     %s  %s\n", s.dim("#"+p.ID), s.paint("1", launcherName(p.Name)))
+		fmt.Fprintf(w.out, "     %s  %s\n", s.dim("#"+p.ID), s.paint("1", launcherName(p)))
 		fmt.Fprintf(w.out, "         %s  →  %s\n", sharingSummary(p.ShareChats, p.ShareMemories), s.accent(sharingSummary(chats, memories)))
 		if !p.ShareChats && !p.ShareMemories && (chats || memories) {
 			ownDataAside = true
@@ -208,7 +211,7 @@ func (w *wizardPrompt) chooseOwner(root string, c Config) error {
 			return nil
 		}
 		w.section("04", "CHOOSE THE OWNER")
-		fmt.Fprintf(w.out, "     #%s  %s will hold shared chats and memories.\n", p.ID, terminalText(launcherName(p.Name)))
+		fmt.Fprintf(w.out, "     #%s  %s will hold shared chats and memories.\n", p.ID, terminalText(launcherName(p)))
 		fmt.Fprintln(w.out, styleFor(w.out).dim("     Its own chats and memories become the shared ones."))
 		apply, e := w.yesNo("Apply this change?", true)
 		if e != nil || !apply {

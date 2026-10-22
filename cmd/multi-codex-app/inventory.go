@@ -159,16 +159,16 @@ func (w *wizardPrompt) report(r installationReport) {
 				if l.Icon != iconColor(p) {
 					state += " · configured icon: " + iconColor(p)
 				}
-				if l.Name != launcherName(p.Name) {
-					state += " · configured name: " + terminalText(launcherName(p.Name))
+				if l.Name != launcherName(p) {
+					state += " · configured name: " + terminalText(launcherName(p))
 				}
 				fmt.Fprintln(w.out, "         "+s.dim(state))
 			}
 		}
 		if !found {
-			fmt.Fprintf(w.out, "\n     %s  %s  %s\n         %s\n", s.dim("#"+p.ID), s.paint("1", terminalText(launcherName(p.Name))), s.icon(iconColor(p)), s.paint("33", "launcher missing · showing saved preferences"))
+			fmt.Fprintf(w.out, "\n     %s  %s  %s\n         %s\n", s.dim("#"+p.ID), s.paint("1", terminalText(launcherName(p))), s.icon(iconColor(p)), s.paint("33", "launcher missing · showing saved preferences"))
 		}
-		if !isDir(p.CodexHome) || (p.UserDataDir != "" && !isDir(p.UserDataDir)) {
+		if _, home := accountVariable(p); (home != "" && !isDir(home)) || (p.UserDataDir != "" && !isDir(p.UserDataDir)) {
 			fmt.Fprintln(w.out, "         "+s.paint("33", "profile data directory unavailable"))
 		}
 		if p.ID == r.SharingOwner {

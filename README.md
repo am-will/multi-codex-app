@@ -10,6 +10,8 @@ https://github.com/user-attachments/assets/de21fbea-44f5-4a70-a849-11caee7e6e9d
 
 - **A separate app for each account.** Launchers like "Codex Personal" and "Codex Work" each open their own Codex, signed in to their own account.
 - **Names and colors you choose.** Five icon colors make each one easy to spot in the Dock, Spotlight, and Raycast.
+- **Claude too.** Add Claude desktop profiles the same way, each with its own sign-in and launcher.
+- **Terminal commands.** Run the `codex` or `claude` CLI as any profile, or get commands like `codex-work` and `claude-personal`.
 - **Plugins per account.** Connect Gmail, GitHub, Figma, and more in one app without touching the others. You can connect the same plugin in several apps, each with its own login.
 - **Everything runs at once.** Open as many as you need, side by side.
 - **Shared chats and memories, if you want them.** Let some or all of your apps see the same chats and memories, and turn it off any time.
@@ -151,6 +153,38 @@ Run `multi-codex-app share` to see what each app shares.
 
 </details>
 
+## Claude profiles
+
+Claude profiles work like Codex ones: a separate app for each account, with its own name, color, and sign-in.
+
+```sh
+multi-codex-app add --claude --count 2
+```
+
+The first Claude profile is the account your Claude app already uses, so nothing changes for it. Each later one gets its own folders. Open it and sign in with the account you want.
+
+With two or more Claude profiles, signing in from the browser shows the same chooser as plugins do. Pick the Claude profile where you started. Claude profiles don't share chats or memories.
+
+If the Claude app isn't in `/Applications`, add `--claude-app /path/to/Claude.app`. Without the app, Claude profiles still work in the terminal.
+
+## Using profiles in the terminal
+
+The `codex` and `claude` command-line tools can use the same accounts as your apps:
+
+```sh
+multi-codex-app run 2                    # codex, signed in as profile 2
+multi-codex-app run 4 -- -p "hello"      # claude as profile 4, with its own arguments
+eval "$(multi-codex-app env 2)"          # point this shell at profile 2
+```
+
+For shorter commands, add this line to `~/.zshrc` or `~/.bashrc`:
+
+```sh
+eval "$(multi-codex-app shell-init)"
+```
+
+Each profile then gets a command named after its launcher, like `codex-work` or `claude-personal`.
+
 ## Everyday commands
 
 | Command | What it does |
@@ -168,6 +202,10 @@ Run `multi-codex-app share` to see what each app shares.
 | `multi-codex-app share` | Show which profiles share chats and memories |
 | `multi-codex-app share 2 all` | Share chats and memories in profile 2 (or `chats`, `memories`, `off`) |
 | `multi-codex-app share owner 3` | Make profile 3 hold the shared chats and memories |
+| `multi-codex-app add --claude` | Add Claude profiles (guided) |
+| `multi-codex-app run 2` | Run the `codex` or `claude` CLI as profile 2 |
+| `multi-codex-app env 2` | Print the line that points a shell at profile 2 |
+| `multi-codex-app shell-init` | Print commands like `codex-work` for each profile |
 | `multi-codex-app update` | Install the newest release and keep your profiles |
 | `multi-codex-app doctor` | Check paths and login-link routing |
 | `multi-codex-app uninstall` | Remove the integration but keep your data |

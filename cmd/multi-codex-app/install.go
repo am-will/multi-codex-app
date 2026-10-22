@@ -39,7 +39,7 @@ func installIntegration(root string, c *Config, dock bool, onlyIDs ...string) er
 		}
 		dir := filepath.Join(data, "applications")
 		for _, p := range c.Profiles {
-			if !includesProfile(onlyIDs, p.ID) {
+			if !includesProfile(onlyIDs, p.ID) || !hasLauncher(*c, p) {
 				continue
 			}
 			target := filepath.Join(dir, "multi-codex-profile-"+p.ID+".desktop")
@@ -51,7 +51,7 @@ func installIntegration(root string, c *Config, dock bool, onlyIDs ...string) er
 			} else if !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
-			body := "[Desktop Entry]\nType=Application\nName=" + launcherName(p.Name) + "\nComment=Independent Codex profile\nExec=" + desktopQuote(c.CLIPath) + " --root " + desktopQuote(root) + " launch " + p.ID + "\nIcon=" + iconFile(root, p, "png") + "\nTerminal=false\nCategories=Development;\n"
+			body := "[Desktop Entry]\nType=Application\nName=" + launcherName(p) + "\nComment=Independent " + appLabel(p.App) + " profile\nExec=" + desktopQuote(c.CLIPath) + " --root " + desktopQuote(root) + " launch " + p.ID + "\nIcon=" + iconFile(root, p, "png") + "\nTerminal=false\nCategories=Development;\n"
 			if e := atomicWrite(filepath.Join(dir, "multi-codex-profile-"+p.ID+".desktop"), []byte(body), 0755); e != nil {
 				return e
 			}
@@ -81,7 +81,7 @@ func installIntegration(root string, c *Config, dock bool, onlyIDs ...string) er
 		subset := *c
 		subset.Profiles = nil
 		for _, p := range c.Profiles {
-			if includesProfile(onlyIDs, p.ID) {
+			if includesProfile(onlyIDs, p.ID) && hasLauncher(*c, p) {
 				subset.Profiles = append(subset.Profiles, p)
 			}
 		}
@@ -127,10 +127,10 @@ func installCLILink(home, cli string) error {
 func helperPlist(c Config, root, profileID string) string {
 	role := "Multi Codex Helper"
 	id := helperID
-	extra := "<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>Codex callback chooser</string><key>CFBundleURLSchemes</key><array><string>codex</string></array></dict></array>"
+	extra := "<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>Codex callback chooser</string><key>CFBundleURLSchemes</key><array><string>codex</string></array></dict><dict><key>CFBundleURLName</key><string>Claude callback chooser</string><key>CFBundleURLSchemes</key><array><string>claude</string></array></dict></array>"
 	if profileID != "" {
 		if p, e := profile(c, profileID); e == nil {
-			role = launcherName(p.Name)
+			role = launcherName(p)
 		} else {
 			role = "Codex Profile " + profileID
 		}
@@ -244,8 +244,14 @@ func doctor() error {
 	}
 	fmt.Println("Desktop app found:", c.AppPath)
 	fmt.Printf("Profiles: %d\n", len(c.Profiles))
+	if c.ClaudeAppPath != "" {
+		if e = checkApp(c.ClaudeAppPath); e != nil {
+			return e
+		}
+		fmt.Println("Claude desktop app found:", c.ClaudeAppPath)
+	}
 	for _, p := range c.Profiles {
-		if !isDir(p.CodexHome) {
+		if _, home := accountVariable(p); home != "" && !isDir(home) {
 			return fmt.Errorf("profile %s home missing", p.ID)
 		}
 		if p.UserDataDir != "" && !isDir(p.UserDataDir) {
@@ -284,7 +290,7 @@ func doctorSharing(c Config) error {
 		for _, problem := range problems {
 			fmt.Printf("Profile %s sharing: %s\n", p.ID, problem)
 		}
-		fmt.Printf("  Quit %s, then run: multi-codex-app share %s %s\n", launcherName(p.Name), p.ID, sharingModeName(p.ShareChats, p.ShareMemories))
+		fmt.Printf("  Quit %s, then run: multi-codex-app share %s %s\n", launcherName(p), p.ID, sharingModeName(p.ShareChats, p.ShareMemories))
 	}
 	if broken {
 		return errors.New("sharing needs repair; see above")

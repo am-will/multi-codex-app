@@ -21,11 +21,21 @@ type Profile struct {
 	// Sharing links this profile's chats or memories to the sharing owner's copies.
 	ShareChats    bool `json:"shareChats,omitempty"`
 	ShareMemories bool `json:"shareMemories,omitempty"`
+	// App is "claude" for Claude profiles; empty means Codex, so older manifests keep working.
+	App string `json:"app,omitempty"`
+	// ClaudeConfigDir is the profile's CLAUDE_CONFIG_DIR. Empty uses Claude's own ~/.claude.
+	ClaudeConfigDir string `json:"claudeConfigDir,omitempty"`
 }
+
+const appClaude = "claude"
+
+func (p Profile) isClaude() bool { return p.App == appClaude }
+
 type Config struct {
 	Version         int              `json:"version"`
 	AppPath         string           `json:"appPath"`
 	CLIPath         string           `json:"cliPath"`
+	ClaudeAppPath   string           `json:"claudeAppPath,omitempty"`
 	PreviousHandler string           `json:"previousHandler,omitempty"`
 	Profiles        []Profile        `json:"profiles"`
 	LegacyLaunchers []LauncherBackup `json:"legacyLaunchers,omitempty"`
@@ -68,9 +78,10 @@ func validateConfig(c Config) error {
 	if c.Version != 1 {
 		return errors.New("unsupported configuration version")
 	}
-	if !filepath.IsAbs(c.AppPath) || !filepath.IsAbs(c.CLIPath) {
+	if !filepath.IsAbs(c.AppPath) || !filepath.IsAbs(c.CLIPath) || (c.ClaudeAppPath != "" && !filepath.IsAbs(c.ClaudeAppPath)) {
 		return errors.New("app and CLI paths must be absolute")
 	}
+	claudeOriginals := 0
 	seen := map[string]bool{}
 	for _, p := range append(append([]Profile(nil), c.Profiles...), c.RemovedProfiles...) {
 		n, e := strconv.Atoi(p.ID)
@@ -84,9 +95,28 @@ func validateConfig(c Config) error {
 		if strings.TrimSpace(p.Name) == "" || strings.ContainsAny(p.Name, "\r\n\x00") {
 			return errors.New("profile names must be nonempty single lines")
 		}
-		if !filepath.IsAbs(p.CodexHome) || (p.ID != "1" && !filepath.IsAbs(p.UserDataDir)) {
-			return errors.New("profile paths must be absolute")
+		switch p.App {
+		case "":
+			if !filepath.IsAbs(p.CodexHome) || (p.ID != "1" && !filepath.IsAbs(p.UserDataDir)) {
+				return errors.New("profile paths must be absolute")
+			}
+		case appClaude:
+			// An empty UserDataDir is the Claude app's own account; only one profile can use it.
+			if p.CodexHome != "" || (p.UserDataDir != "" && !filepath.IsAbs(p.UserDataDir)) || (p.ClaudeConfigDir != "" && !filepath.IsAbs(p.ClaudeConfigDir)) {
+				return errors.New("profile paths must be absolute")
+			}
+			if p.UserDataDir == "" {
+				claudeOriginals++
+			}
+			if p.ShareChats || p.ShareMemories || p.ID == c.SharingOwner {
+				return errors.New("sharing chats and memories is only available for Codex profiles")
+			}
+		default:
+			return errors.New("unknown profile app; use codex or claude")
 		}
+	}
+	if claudeOriginals > 1 {
+		return errors.New("only one Claude profile can use the Claude app's own account")
 	}
 	if len(c.Profiles) == 0 && len(c.RemovedProfiles) == 0 {
 		return errors.New("no profiles configured")
@@ -246,7 +276,44 @@ func appendProfile(c *Config, id, root, home string) error {
 	for suffix := 2; ; suffix++ {
 		collision := false
 		for _, existing := range c.Profiles {
-			if strings.EqualFold(launcherName(existing.Name), launcherName(p.Name)) {
+			if strings.EqualFold(launcherName(existing), launcherName(p)) {
+				collision = true
+				break
+			}
+		}
+		if !collision {
+			break
+		}
+		p.Name = fmt.Sprintf("%s (%d)", base, suffix)
+	}
+	c.Profiles = append(c.Profiles, p)
+	return nil
+}
+
+// appendClaudeProfile adds a Claude profile. The first one uses the Claude app's own account
+// and ~/.claude, so an existing sign-in keeps working; later ones get private folders.
+func appendClaudeProfile(c *Config, id, root string) error {
+	if len(c.Profiles) >= 100 {
+		return errors.New("at most 100 active profiles are supported")
+	}
+	if reservedProfileID(*c, id, root) {
+		return errors.New("that profile number is already used or retained for removed profile data")
+	}
+	p := Profile{ID: id, App: appClaude, Name: "Profile " + id, UserDataDir: filepath.Join(root, "profiles", id, "desktop"), ClaudeConfigDir: filepath.Join(root, "profiles", id, "claude")}
+	original := true
+	for _, existing := range append(append([]Profile(nil), c.Profiles...), c.RemovedProfiles...) {
+		if existing.isClaude() && existing.UserDataDir == "" {
+			original = false
+		}
+	}
+	if original {
+		p.Name, p.UserDataDir, p.ClaudeConfigDir = "Primary", "", ""
+	}
+	base := p.Name
+	for suffix := 2; ; suffix++ {
+		collision := false
+		for _, existing := range c.Profiles {
+			if strings.EqualFold(launcherName(existing), launcherName(p)) {
 				collision = true
 				break
 			}

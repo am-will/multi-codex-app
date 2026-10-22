@@ -3,15 +3,20 @@ import CoreServices
 import Darwin
 
 let helperID = "io.github.am-will.multi-codex-app"
-struct Profile: Codable { let id: String; let name: String; let codexHome: String; let userDataDir: String; let iconColor: String? }
-struct Configuration: Codable { let version: Int; let appPath: String; let cliPath: String; let previousHandler: String?; let profiles: [Profile]; let removedProfiles: [Profile]? }
+struct Profile: Codable { let id: String; let name: String; let codexHome: String?; let userDataDir: String; let iconColor: String?; let app: String? }
+struct Configuration: Codable { let version: Int; let appPath: String; let cliPath: String; let previousHandler: String?; let profiles: [Profile]; let removedProfiles: [Profile]?; let claudeAppPath: String? }
+// Profiles belong to the Codex app unless their app is "claude". Each app has its own link scheme.
+let claudeScheme = "claude"
+let claudeDefaultHandler = "com.anthropic.claudefordesktop"
+func appOf(_ p: Profile) -> String { p.app == claudeScheme ? claudeScheme : "codex" }
 let iconColors = ["white", "yellow", "blue", "purple", "teal"]
 func profileIconColor(_ p: Profile) -> String {
     if let color = p.iconColor, iconColors.contains(color) { return color }
     return iconColors[max(0, (Int(p.id) ?? 1) - 1) % iconColors.count]
 }
 func profileImage(_ p: Profile, size: CGFloat) -> NSImage? {
-    guard let image = NSImage(contentsOfFile: rootPath() + "/icons/" + profileIconColor(p) + ".png") else { return nil }
+    let prefix = appOf(p) == claudeScheme ? "claude-" : ""
+    guard let image = NSImage(contentsOfFile: rootPath() + "/icons/" + prefix + profileIconColor(p) + ".png") else { return nil }
     image.size = NSSize(width: size, height: size); image.isTemplate = false; return image
 }
 func rootPath() -> String {
@@ -21,8 +26,10 @@ func configuration() throws -> Configuration {
     let c = try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: URL(fileURLWithPath: rootPath() + "/config.json")))
     guard c.version == 1 else { throw NSError(domain: "MultiCodex", code: 1) }; return c
 }
-func handler() -> String { LSCopyDefaultHandlerForURLScheme("codex" as CFString)?.takeRetainedValue() as String? ?? "" }
-func setHandler(_ id: String) -> OSStatus { LSSetDefaultHandlerForURLScheme("codex" as CFString, id as CFString) }
+func handler(_ scheme: String = "codex") -> String { LSCopyDefaultHandlerForURLScheme(scheme as CFString)?.takeRetainedValue() as String? ?? "" }
+func setHandler(_ id: String, _ scheme: String = "codex") -> OSStatus { LSSetDefaultHandlerForURLScheme(scheme as CFString, id as CFString) }
+// Claude links are only taken over once there are two Claude profiles to choose between.
+func routesClaude(_ c: Configuration) -> Bool { c.claudeAppPath != nil && c.profiles.filter({ appOf($0) == claudeScheme }).count > 1 }
 func commandLine(_ pid: pid_t) -> String? {
     let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/ps"); p.arguments = ["-ww", "-p", String(pid), "-o", "command="]
     let pipe = Pipe(); p.standardOutput = pipe; p.standardError = FileHandle.nullDevice
@@ -30,14 +37,16 @@ func commandLine(_ pid: pid_t) -> String? {
     let data = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
     guard p.terminationStatus == 0 else { return nil }; return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
 }
-func runningInstances(_ c: Configuration) -> [String: NSRunningApplication] {
-    let apps = NSWorkspace.shared.runningApplications.filter { $0.bundleURL?.standardizedFileURL.path == URL(fileURLWithPath: c.appPath).standardizedFileURL.path }
+func runningInstances(_ c: Configuration, app: String = "codex") -> [String: NSRunningApplication] {
+    guard let appPath = app == claudeScheme ? c.claudeAppPath : c.appPath else { return [:] }
+    let apps = NSWorkspace.shared.runningApplications.filter { $0.bundleURL?.standardizedFileURL.path == URL(fileURLWithPath: appPath).standardizedFileURL.path }
     let commands = apps.compactMap { app -> (NSRunningApplication, String)? in
         guard let cmd = commandLine(app.processIdentifier) else { return nil }; return (app, cmd)
     }
     var result: [String: NSRunningApplication] = [:]
-    let primary = c.profiles.first(where: { $0.id == "1" }) ?? c.removedProfiles?.first(where: { $0.id == "1" }) ?? Profile(id: "1", name: "Primary", codexHome: NSHomeDirectory() + "/.codex", userDataDir: "", iconColor: nil)
-    let candidates = c.profiles.contains(where: { $0.id == "1" }) ? c.profiles : c.profiles + [primary]
+    let primary = c.profiles.first(where: { $0.id == "1" }) ?? c.removedProfiles?.first(where: { $0.id == "1" }) ?? Profile(id: "1", name: "Primary", codexHome: NSHomeDirectory() + "/.codex", userDataDir: "", iconColor: nil, app: nil)
+    let mine = c.profiles.filter { appOf($0) == app }
+    let candidates = app == claudeScheme || mine.contains(where: { $0.id == "1" }) ? mine : mine + [primary]
     for profile in candidates {
         let matches = commands.filter { app, cmd in
             if profile.userDataDir.isEmpty { return !cmd.contains("--user-data-dir") && !cmd.contains("--user-data-path") }
@@ -48,7 +57,7 @@ func runningInstances(_ c: Configuration) -> [String: NSRunningApplication] {
     }
     return result
 }
-func instance(_ profile: Profile, _ c: Configuration) -> NSRunningApplication? { runningInstances(c)[profile.id] }
+func instance(_ profile: Profile, _ c: Configuration) -> NSRunningApplication? { runningInstances(c, app: appOf(profile))[profile.id] }
 func deliver(_ raw: String, to app: NSRunningApplication) throws {
     let event = NSAppleEventDescriptor(eventClass: AEEventClass(0x4755524c), eventID: AEEventID(0x4755524c), targetDescriptor: NSAppleEventDescriptor(processIdentifier: app.processIdentifier), returnID: AEReturnID(-1), transactionID: AETransactionID(0))
     event.setParam(NSAppleEventDescriptor(string: raw), forKeyword: AEKeyword(0x2d2d2d2d))
@@ -56,7 +65,7 @@ func deliver(_ raw: String, to app: NSRunningApplication) throws {
 }
 func validURI(_ raw: String) -> Bool {
     guard raw.utf8.count <= 65536, !raw.contains("\n"), !raw.contains("\r"), !raw.contains("\0"), let u = URLComponents(string: raw) else { return false }
-    return u.scheme == "codex" && !(u.host ?? "").isEmpty && u.user == nil && u.password == nil && u.port == nil
+    return (u.scheme == "codex" || u.scheme == claudeScheme) && !(u.host ?? "").isEmpty && u.user == nil && u.password == nil && u.port == nil
 }
 func showError(_ text: String) {
     let a = NSAlert(); a.messageText = "Connection could not be delivered"; a.informativeText = text; a.addButton(withTitle: "OK"); NSApp.activate(ignoringOtherApps: true); a.runModal()
@@ -98,21 +107,23 @@ final class Chooser: NSObject, NSWindowDelegate {
     var selected: Profile?
     var completion: ((Profile?) -> Void)?
     var continueButton: NSButton!
-    func show(_ c: Configuration, preview: Bool, completion: @escaping (Profile?) -> Void) {
+    func show(_ c: Configuration, app: String = "codex", preview: Bool, completion: @escaping (Profile?) -> Void) {
         self.completion = completion
-        let listHeight = min(CGFloat(c.profiles.count) * 74, 370)
+        let profiles = c.profiles.filter { appOf($0) == app }
+        let appName = app == claudeScheme ? "Claude" : "Codex"
+        let listHeight = min(CGFloat(profiles.count) * 74, 370)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 218 + listHeight), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Multi Codex"; window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true; window.isReleasedWhenClosed = false; window.delegate = self
         let view = NSView(); window.contentView = view
         func label(_ text: String, font: NSFont, color: NSColor) -> NSTextField {
             let f = NSTextField(wrappingLabelWithString: text); f.font = font; f.textColor = color; f.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(f); return f
         }
-        let title = label("Choose a Codex profile", font: .systemFont(ofSize: 23, weight: .bold), color: .labelColor)
+        let title = label("Choose a \(appName) profile", font: .systemFont(ofSize: 23, weight: .bold), color: .labelColor)
         let subtitle = label("Send this connection to the window where you clicked Connect.", font: .systemFont(ofSize: 13), color: .secondaryLabelColor)
-        let scroll = NSScrollView(); scroll.translatesAutoresizingMaskIntoConstraints = false; scroll.drawsBackground = false; scroll.hasVerticalScroller = c.profiles.count > 5; view.addSubview(scroll)
+        let scroll = NSScrollView(); scroll.translatesAutoresizingMaskIntoConstraints = false; scroll.drawsBackground = false; scroll.hasVerticalScroller = profiles.count > 5; view.addSubview(scroll)
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10; stack.translatesAutoresizingMaskIntoConstraints = false; scroll.documentView = stack
-        let running = runningInstances(c)
-        for p in c.profiles {
+        let running = runningInstances(c, app: app)
+        for p in profiles {
             let b = ProfileButton(p, available: preview || running[p.id] != nil); b.target = self; b.action = #selector(selectProfile(_:)); stack.addArrangedSubview(b); b.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true; buttons.append(b)
         }
         let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelChoice)); cancel.bezelStyle = .rounded; cancel.keyEquivalent = "\u{1b}"; cancel.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(cancel)
@@ -155,7 +166,15 @@ final class Helper: NSObject, NSApplicationDelegate {
         rebuildMenu(); claim(); ready = true; processNext()
         timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in self?.claim(); self?.rebuildMenu() }
     }
-    func claim() { if handler() != helperID { _ = setHandler(helperID) } }
+    func claim() {
+        if handler() != helperID { _ = setHandler(helperID) }
+        guard let c = try? configuration() else { return }
+        if routesClaude(c) {
+            if handler(claudeScheme) != helperID { _ = setHandler(helperID, claudeScheme) }
+        } else if handler(claudeScheme) == helperID {
+            _ = setHandler(claudeDefaultHandler, claudeScheme)
+        }
+    }
     func rebuildMenu() {
         let menu = NSMenu(); let heading = menu.addItem(withTitle: "Multi Codex", action: nil, keyEquivalent: ""); heading.isEnabled = false; menu.addItem(.separator())
         if let c = try? configuration() { for p in c.profiles { let item = menu.addItem(withTitle: p.name, action: #selector(launchProfile(_:)), keyEquivalent: ""); item.representedObject = p.id; item.target = self; item.image = profileImage(p, size: 20) } }
@@ -179,12 +198,17 @@ final class Helper: NSObject, NSApplicationDelegate {
     func processNext() {
         guard ready, chooser == nil, !pending.isEmpty, let c = try? configuration() else { return }
         let raw = pending.removeFirst(); let u = URL(string: raw)!
-        if u.host == "connector" && u.path == "/oauth_callback" {
+        if u.scheme == claudeScheme {
+            // Claude sign-in links carry a login, so they always go to the profile you pick.
+            let choice = Chooser(); chooser = choice; choice.show(c, app: claudeScheme, preview: false) { [weak self] profile in
+                if let profile { self?.forward(raw, profile, c) }; self?.chooser = nil; self?.processNext()
+            }
+        } else if u.host == "connector" && u.path == "/oauth_callback" {
             let choice = Chooser(); chooser = choice; choice.show(c, preview: false) { [weak self] profile in
                 if let profile { self?.forward(raw, profile, c) }; self?.chooser = nil; self?.processNext()
             }
         } else {
-            let primary = c.profiles.first(where: { $0.id == "1" }) ?? c.removedProfiles?.first(where: { $0.id == "1" }) ?? Profile(id: "1", name: "Primary", codexHome: NSHomeDirectory() + "/.codex", userDataDir: "", iconColor: nil)
+            let primary = c.profiles.first(where: { $0.id == "1" }) ?? c.removedProfiles?.first(where: { $0.id == "1" }) ?? Profile(id: "1", name: "Primary", codexHome: NSHomeDirectory() + "/.codex", userDataDir: "", iconColor: nil, app: nil)
             forward(raw, primary, c); processNext()
         }
     }
@@ -264,9 +288,9 @@ if args.contains("--handler"){print(handler());exit(0)}
 if args.count >= 4 && args[1]=="--icon" {do{try renderIcon(args[2],args[3]);exit(0)}catch{exit(1)}}
 if args.count >= 2 && ["--pin","--unpin"].contains(args[1]) {do{try dockPaths(args[1]=="--unpin",paths:Array(args.dropFirst(2)));exit(0)}catch{exit(1)}}
 if args.count >= 2 && args[1] == "--relocate-pins" { do { try relocateDockPins(Array(args.dropFirst(2))); exit(0) } catch { exit(1) } }
-if args.contains("--restore") {do{let c=try configuration();exit(setHandler(c.previousHandler ?? "com.openai.codex")==0 ? 0:1)}catch{exit(1)}}
+if args.contains("--restore") {do{let c=try configuration();if handler(claudeScheme)==helperID{_=setHandler(claudeDefaultHandler,claudeScheme)};exit(setHandler(c.previousHandler ?? "com.openai.codex")==0 ? 0:1)}catch{exit(1)}}
 if args.contains("--status") {
-    do { let c=try configuration();let h=handler();print("Callback handler: \(h)");for p in c.profiles{print("\(p.id) \(p.name): \(instance(p,c).map{"running (PID \($0.processIdentifier))"} ?? "closed")")};exit(h==helperID ? 0:1) }catch{print("Configuration unavailable");exit(1)}
+    do { let c=try configuration();let h=handler();print("Callback handler: \(h)");if c.claudeAppPath != nil {print("Claude callback handler: \(handler(claudeScheme))")};for p in c.profiles{print("\(p.id) \(p.name): \(instance(p,c).map{"running (PID \($0.processIdentifier))"} ?? "closed")")};exit(h==helperID ? 0:1) }catch{print("Configuration unavailable");exit(1)}
 }
 if args.count==3 && ["--focus","--deliver"].contains(args[1]) {
     do {let c=try configuration();guard let p=c.profiles.first(where:{$0.id==args[2]}),let app=instance(p,c) else{exit(1)}

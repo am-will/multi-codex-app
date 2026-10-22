@@ -87,7 +87,7 @@ func (w *wizardPrompt) review(c Config, pin bool) (bool, error) {
 	w.section("04", "READY TO APPLY")
 	s := styleFor(w.out)
 	for _, p := range c.Profiles {
-		fmt.Fprintf(w.out, "     %s  %s  %s\n", s.dim("#"+p.ID), s.paint("1", launcherName(p.Name)), s.icon(iconColor(p)))
+		fmt.Fprintf(w.out, "     %s  %s  %s\n", s.dim("#"+p.ID), s.paint("1", launcherName(p)), s.icon(iconColor(p)))
 	}
 	if runtime.GOOS == "darwin" {
 		value := "no"

@@ -41,6 +41,50 @@ func detectApp() (string, error) {
 	}
 	return "", errors.New("desktop app not found; install it first, then run setup --app /absolute/path/to/app (Windows: path to desktop .exe)")
 }
+
+// detectClaudeApp finds the Claude desktop app. It is optional: without it, Claude profiles
+// still work in the terminal through the run command.
+func detectClaudeApp() (string, error) {
+	home, _ := os.UserHomeDir()
+	var candidates []string
+	switch runtime.GOOS {
+	case "darwin":
+		candidates = []string{"/Applications/Claude.app", filepath.Join(home, "Applications", "Claude.app")}
+	case "windows":
+		candidates = []string{filepath.Join(os.Getenv("LOCALAPPDATA"), "AnthropicClaude", "claude.exe")}
+	default:
+		if p, e := exec.LookPath("claude-desktop"); e == nil {
+			candidates = append(candidates, p)
+		}
+	}
+	for _, p := range candidates {
+		if checkApp(p) == nil {
+			return p, nil
+		}
+	}
+	return "", errors.New("Claude desktop app not found; pass --claude-app /absolute/path, or use Claude profiles in the terminal with run")
+}
+
+// desktopApp is the app a profile opens.
+func desktopApp(c Config, p Profile) (string, error) {
+	if !p.isClaude() {
+		return c.AppPath, nil
+	}
+	if c.ClaudeAppPath == "" {
+		return "", errors.New("Claude desktop app not configured; run add --claude --claude-app /absolute/path")
+	}
+	return c.ClaudeAppPath, nil
+}
+
+// accountVariable is the variable that points the app and its CLI at the profile's account.
+// An empty value means the tool's own default folder.
+func accountVariable(p Profile) (name, value string) {
+	if p.isClaude() {
+		return "CLAUDE_CONFIG_DIR", p.ClaudeConfigDir
+	}
+	return "CODEX_HOME", p.CodexHome
+}
+
 func checkApp(path string) error {
 	s, e := os.Stat(path)
 	if e != nil {
@@ -66,15 +110,22 @@ func appEnvironment(p Profile) []string {
 	for _, v := range os.Environ() {
 		k, _, _ := strings.Cut(v, "=")
 		switch k {
-		case "CODEX_HOME", "CODEX_ELECTRON_USER_DATA_PATH", "CODEX_DESKTOP_RELAUNCH_OPEN_EVENTS":
+		case "CODEX_HOME", "CODEX_ELECTRON_USER_DATA_PATH", "CODEX_DESKTOP_RELAUNCH_OPEN_EVENTS", "CLAUDE_CONFIG_DIR":
 			continue
 		}
 		env = append(env, v)
 	}
-	return append(env, "CODEX_HOME="+p.CodexHome)
+	if name, value := accountVariable(p); value != "" {
+		env = append(env, name+"="+value)
+	}
+	return env
 }
 func launch(c Config, p Profile, uri string) error {
-	if e := checkApp(c.AppPath); e != nil {
+	appPath, e := desktopApp(c, p)
+	if e != nil {
+		return e
+	}
+	if e := checkApp(appPath); e != nil {
 		return e
 	}
 	if uri != "" {
@@ -96,14 +147,17 @@ func launch(c Config, p Profile, uri string) error {
 		if focus.Run() == nil {
 			return nil
 		}
-		args := []string{"-n", c.AppPath, "--env", "CODEX_HOME=" + p.CodexHome}
+		args := []string{"-n", appPath}
+		if name, value := accountVariable(p); value != "" {
+			args = append(args, "--env", name+"="+value)
+		}
 		if p.UserDataDir != "" {
 			args = append(args, "--args", "--user-data-dir="+p.UserDataDir)
 		}
 		cmd := exec.Command("/usr/bin/open", args...)
 		cmd.Env = appEnvironment(p)
 		if cmd.Run() != nil {
-			return errors.New("could not launch Codex")
+			return fmt.Errorf("could not launch %s", appLabel(p.App))
 		}
 		return nil
 	}
@@ -114,7 +168,7 @@ func launch(c Config, p Profile, uri string) error {
 	if uri != "" {
 		args = append(args, uri)
 	}
-	cmd := exec.Command(c.AppPath, args...)
+	cmd := exec.Command(appPath, args...)
 	cmd.Env = appEnvironment(p)
 	// Callback arguments are never logged, even on launch failures.
 	if e := cmd.Start(); e != nil {

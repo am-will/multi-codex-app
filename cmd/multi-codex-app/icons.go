@@ -42,10 +42,12 @@ func iconColor(p Profile) string {
 }
 func installIcons(root string) error {
 	for _, palette := range iconPalettes() {
-		for _, extension := range []string{"png", "ico"} {
-			name := palette.Name + "." + extension
-			if e := extractAsset("icons/"+name, filepath.Join(root, "icons", name), 0644); e != nil {
-				return e
+		for _, prefix := range []string{"", "claude-"} {
+			for _, extension := range []string{"png", "ico"} {
+				name := prefix + palette.Name + "." + extension
+				if e := extractAsset("icons/"+name, filepath.Join(root, "icons", name), 0644); e != nil {
+					return e
+				}
 			}
 		}
 	}
@@ -81,8 +83,17 @@ func listIcons() {
 		fmt.Printf("%-7s  background %s, logo %s\n", p.Name, p.Background, p.Foreground)
 	}
 }
+
+// iconName is the artwork for a profile: Codex profiles use the OpenAI mark, Claude profiles
+// a plain chat bubble on the same colors.
+func iconName(p Profile) string {
+	if p.isClaude() {
+		return "claude-" + iconColor(p)
+	}
+	return iconColor(p)
+}
 func iconFile(root string, p Profile, extension string) string {
-	return filepath.Join(root, "icons", iconColor(p)+"."+extension)
+	return filepath.Join(root, "icons", iconName(p)+"."+extension)
 }
 
 // Used by shortcut adapters; old manifests receive the same deterministic defaults.

@@ -9,9 +9,17 @@ import (
 
 func TestLauncherNames(t *testing.T) {
 	for name, want := range map[string]string{"Primary": "Codex Primary", "Personal": "Codex Personal", "Codex (Work)": "Codex (Work)", "Codex Personal": "Codex Personal", "Work & Research": "Codex Work & Research"} {
-		if got := launcherName(name); got != want {
+		if got := launcherTitle("", name); got != want {
 			t.Fatalf("%q: got %q want %q", name, got, want)
 		}
+	}
+	for name, want := range map[string]string{"Work": "Claude Work", "Claude (Team)": "Claude (Team)", "Codex Work": "Claude Codex Work"} {
+		if got := launcherTitle(appClaude, name); got != want {
+			t.Fatalf("claude %q: got %q want %q", name, got, want)
+		}
+	}
+	if validateNames([]Profile{{Name: "Work"}, {Name: "Work", App: appClaude}}) != nil {
+		t.Fatal("a Codex and a Claude profile may share a name")
 	}
 }
 func TestNamesRejectCollisionsAndUnsafePaths(t *testing.T) {
