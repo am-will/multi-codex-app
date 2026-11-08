@@ -136,12 +136,126 @@ final class Chooser: NSObject, NSWindowDelegate {
 }
 extension NSLayoutConstraint { func withPriority(_ p: NSLayoutConstraint.Priority) -> NSLayoutConstraint { priority = p; return self } }
 
+// Outlines each running profile's windows in its icon color and hangs the profile name from the
+// top edge, so windows of different accounts can be told apart even when they group under one
+// Dock icon. Codex itself is never modified: each tint is a separate click-through panel owned by
+// the helper and kept directly above its window, so anything covering the window covers the tint
+// too. Only window ids, owners and bounds are read, which needs no Screen Recording permission.
+let colorCodeWindowsKey = "ColorCodeWindows"
+func colorCodeWindowsEnabled() -> Bool { UserDefaults.standard.object(forKey: colorCodeWindowsKey) as? Bool ?? true }
+func tintColor(_ p: Profile) -> NSColor {
+    switch profileIconColor(p) {
+    case "yellow": return .systemYellow
+    case "blue": return .systemBlue
+    case "purple": return .systemPurple
+    case "teal": return .systemTeal
+    default: return NSColor(white: 0.8, alpha: 1)
+    }
+}
+func isLightColor(_ c: NSColor) -> Bool {
+    let s = c.usingColorSpace(.sRGB) ?? c
+    return 0.2126 * s.redComponent + 0.7152 * s.greenComponent + 0.0722 * s.blueComponent > 0.6
+}
+struct ServerWindow { let id: CGWindowID; let pid: pid_t; let bounds: CGRect }
+func onScreenWindows(of pids: Set<pid_t>) -> [ServerWindow] {
+    let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+    return list.compactMap { info in
+        guard let id = info[kCGWindowNumber as String] as? CGWindowID, let pid = info[kCGWindowOwnerPID as String] as? pid_t, pids.contains(pid),
+              (info[kCGWindowLayer as String] as? Int) == 0, (info[kCGWindowAlpha as String] as? Double ?? 1) > 0.01,
+              let b = info[kCGWindowBounds as String] as? [String: Any], let r = CGRect(dictionaryRepresentation: b as CFDictionary),
+              r.width >= 240, r.height >= 160 else { return nil } // document windows only: no menus, popovers or tooltips
+        return ServerWindow(id: id, pid: pid, bounds: r)
+    }
+}
+final class TintView: NSView {
+    var profile: Profile?
+    override var isFlipped: Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        guard let p = profile else { return }
+        let color = tintColor(p), border: CGFloat = 3
+        let outline = NSBezierPath(roundedRect: bounds.insetBy(dx: border / 2, dy: border / 2), xRadius: 12, yRadius: 12)
+        outline.lineWidth = border; color.setStroke(); outline.stroke()
+        // Name tag in the empty strip above the title-bar controls.
+        let ink: NSColor = isLightColor(color) ? NSColor(white: 0.1, alpha: 1) : .white
+        let text = NSAttributedString(string: p.name, attributes: [.font: NSFont.systemFont(ofSize: 11, weight: .semibold), .foregroundColor: ink])
+        let padX: CGFloat = 10, height: CGFloat = 18, r: CGFloat = 7
+        let width = min(bounds.width - 24, ceil(text.size().width) + 2 * padX)
+        let tag = NSRect(x: (bounds.width - width) / 2, y: 0, width: width, height: height)
+        let shape = NSBezierPath(); shape.move(to: NSPoint(x: tag.minX, y: tag.minY)); shape.line(to: NSPoint(x: tag.maxX, y: tag.minY))
+        shape.appendArc(withCenter: NSPoint(x: tag.maxX - r, y: tag.maxY - r), radius: r, startAngle: 0, endAngle: 90)
+        shape.appendArc(withCenter: NSPoint(x: tag.minX + r, y: tag.maxY - r), radius: r, startAngle: 90, endAngle: 180)
+        shape.close(); color.setFill(); shape.fill()
+        let size = text.size()
+        text.draw(with: NSRect(x: tag.minX + padX, y: tag.midY - size.height / 2, width: tag.width - 2 * padX, height: size.height), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+    }
+}
+final class TintPanel: NSPanel {
+    let tint = TintView()
+    var shownFrame: NSRect?
+    var shownProfile: String?
+    init() {
+        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        isOpaque = false; backgroundColor = .clear; hasShadow = false; ignoresMouseEvents = true; isReleasedWhenClosed = false
+        hidesOnDeactivate = false; animationBehavior = .none; level = .normal; contentView = tint
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle, .transient]
+    }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+    func show(_ p: Profile, frame: NSRect, above window: CGWindowID) {
+        if shownFrame != frame { setFrame(frame, display: false); shownFrame = frame }
+        let key = p.id + "\u{0}" + p.name + "\u{0}" + profileIconColor(p)
+        if shownProfile != key { tint.profile = p; tint.needsDisplay = true; shownProfile = key }
+        order(.above, relativeTo: Int(window))
+    }
+}
+final class WindowTinter {
+    var panels: [CGWindowID: TintPanel] = [:]
+    var owners: [pid_t: Profile] = [:]
+    var timer: Timer?
+    var observers: [NSObjectProtocol] = []
+    func start() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            // A just-launched Codex has no windows yet; look again once it has settled.
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.refreshOwners(); DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self?.refreshOwners() }
+            })
+        }
+        refreshOwners()
+        // Fast enough to follow a dragged window; each pass is one window-list query.
+        let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(t, forMode: .common); timer = t
+    }
+    /// Maps each running profile's process to its profile. Called on app launch/quit and when the configuration may have changed.
+    func refreshOwners() {
+        guard colorCodeWindowsEnabled(), let c = try? configuration(), c.profiles.count > 1 else { owners = [:]; tick(); return }
+        var map: [pid_t: Profile] = [:]
+        for (id, app) in runningInstances(c) { if let p = c.profiles.first(where: { $0.id == id }) { map[app.processIdentifier] = p } }
+        owners = map; tick()
+    }
+    func tick() {
+        guard !owners.isEmpty else { removeAll(); return }
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        var seen = Set<CGWindowID>()
+        for w in onScreenWindows(of: Set(owners.keys)) {
+            guard let p = owners[w.pid] else { continue }
+            seen.insert(w.id)
+            let panel = panels[w.id] ?? TintPanel(); panels[w.id] = panel
+            // Window-server bounds have a top-left origin; AppKit's is bottom-left.
+            panel.show(p, frame: NSRect(x: w.bounds.minX, y: primaryHeight - w.bounds.maxY, width: w.bounds.width, height: w.bounds.height), above: w.id)
+        }
+        for (id, panel) in panels where !seen.contains(id) { panel.orderOut(nil); panels[id] = nil }
+    }
+    func removeAll() { panels.values.forEach { $0.orderOut(nil) }; panels = [:] }
+}
+
 final class Helper: NSObject, NSApplicationDelegate {
     var status: NSStatusItem!
     var chooser: Chooser?
     var pending: [String] = []
     var ready = false
     var timer: Timer?
+    let tinter = WindowTinter()
     func applicationWillFinishLaunching(_ note: Notification) {
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(receive(_:reply:)), forEventClass: AEEventClass(0x4755524c), andEventID: AEEventID(0x4755524c))
     }
@@ -152,17 +266,21 @@ final class Helper: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--preview") { ready = true; preview(); return }
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         status.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "Multi Codex profiles")
-        rebuildMenu(); claim(); ready = true; processNext()
-        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in self?.claim(); self?.rebuildMenu() }
+        rebuildMenu(); claim(); ready = true; processNext(); tinter.start()
+        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in self?.claim(); self?.rebuildMenu(); self?.tinter.refreshOwners() }
     }
     func claim() { if handler() != helperID { _ = setHandler(helperID) } }
     func rebuildMenu() {
         let menu = NSMenu(); let heading = menu.addItem(withTitle: "Multi Codex", action: nil, keyEquivalent: ""); heading.isEnabled = false; menu.addItem(.separator())
         if let c = try? configuration() { for p in c.profiles { let item = menu.addItem(withTitle: p.name, action: #selector(launchProfile(_:)), keyEquivalent: ""); item.representedObject = p.id; item.target = self; item.image = profileImage(p, size: 20) } }
-        menu.addItem(.separator()); menu.addItem(withTitle: "Preview Connection Chooser…", action: #selector(preview), keyEquivalent: "").target = self
+        menu.addItem(.separator())
+        let tint = menu.addItem(withTitle: "Color-Code Windows", action: #selector(toggleColorCode), keyEquivalent: ""); tint.target = self; tint.state = colorCodeWindowsEnabled() ? .on : .off
+        tint.toolTip = "Outline each profile's windows in its icon color, with the profile name on top"
+        menu.addItem(withTitle: "Preview Connection Chooser…", action: #selector(preview), keyEquivalent: "").target = self
         menu.addItem(withTitle: "About Multi Codex", action: #selector(about), keyEquivalent: "").target = self
         status.menu = menu
     }
+    @objc func toggleColorCode() { UserDefaults.standard.set(!colorCodeWindowsEnabled(), forKey: colorCodeWindowsKey); rebuildMenu(); tinter.refreshOwners() }
     @objc func about() { let a = NSAlert(); a.messageText = "Multi Codex"; a.informativeText = "Independent profiles and connection routing.\n\nInspired by Edi Hasaj's two-account methodology:\nedihasaj.com/posts/two-codex-accounts-two-dock-icons-macos\n\nManage profiles: multi-codex-app add / rename / icon / update\nRemove integration: multi-codex-app uninstall"; a.runModal() }
     @objc func launchProfile(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String, let c = try? configuration() else { return }
