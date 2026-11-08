@@ -10,6 +10,7 @@ https://github.com/user-attachments/assets/de21fbea-44f5-4a70-a849-11caee7e6e9d
 
 - **A separate app for each account.** Launchers like "Codex Personal" and "Codex Work" each open their own Codex, signed in to their own account.
 - **Names and colors you choose.** Five icon colors make each one easy to spot in the Dock, Spotlight, and Raycast.
+- **Color-coded windows on macOS.** Each open window gets a thin outline in its profile's color, with the profile name at the top, so two Codex windows side by side are easy to tell apart. Turn it off from the Multi Codex menu-bar icon with **Color-Code Windows**.
 - **Plugins per account.** Connect Gmail, GitHub, Figma, and more in one app without touching the others. You can connect the same plugin in several apps, each with its own login.
 - **Everything runs at once.** Open as many as you need, side by side.
 - **Shared chats and memories, if you want them.** Let some or all of your apps see the same chats and memories, and turn it off any time.
@@ -189,7 +190,7 @@ Run `multi-codex-app share` to see what each app shares.
 
 ## Good to know
 
-- **Dock grouping.** On macOS your colored launchers sit in the Dock, but running windows may still group under the original Codex icon. macOS groups windows by the signed app, and launchers can't change that.
+- **Dock grouping.** On macOS your colored launchers sit in the Dock, but running windows may still group under the original Codex icon. macOS groups windows by the signed app, and launchers can't change that, which is why each window carries its profile's colored outline and name instead. The outline is drawn by the Multi Codex helper on top of the window: it never changes the Codex app, lets every click through, and needs no extra macOS permissions.
 - **Nothing is merged.** Each account keeps its own usage limits and billing, and its own chats unless you [share them](#sharing-chats-and-memories). Your web browser is shared, so pick the right account there when you approve a plugin.
 - **Spotlight and Raycast.** Launchers are installed in `~/Applications`, so Spotlight and Raycast find them. Raycast can take a moment to notice new ones. If it doesn't, add `~/Applications` to its search scope.
 - **Dock pins.** New launchers are pinned to the Dock unless you pass `--no-dock`. On Windows and Linux, pin the shortcuts yourself.
