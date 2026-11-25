@@ -2,7 +2,7 @@
 
 **Run more than one Codex account at the same time.**
 
-Multi Codex App gives each of your Codex accounts its own copy of the Codex desktop app, with its own name, Dock icon, sign-in, chats, and plugins. Your personal and work accounts can stay open side by side, so you never have to sign out to switch.
+Multi Codex App gives each of your Codex accounts its own launcher and isolated profile, with its own name, Dock icon, sign-in, chats, and plugins, while sharing one installed Codex desktop app instead of duplicating it. On macOS, your personal and work accounts can stay open side by side so you never have to sign out to switch; Windows and Linux desktop launching is [experimental](#platform-support).
 
 https://github.com/user-attachments/assets/de21fbea-44f5-4a70-a849-11caee7e6e9d
 
@@ -196,6 +196,14 @@ Run `multi-codex-app share` to see what each app shares.
 - **Your data stays put.** Removing a profile or uninstalling keeps your sign-ins and chats.
 - **Login links stay private.** They're handled in memory and never logged or saved. On macOS each one goes only to the app you pick, and never falls back to another account.
 - **Codex itself is untouched.** The official, signed Codex app is never modified.
+
+## Disk usage and profile isolation
+
+All profiles share the single official Codex desktop app already installed on macOS, Windows, or Linux, without cloning or patching it. Each profile adds only a lightweight launcher (a `.app` wrapper in `~/Applications` on macOS, a Start menu `.lnk` shortcut on Windows, or a `.desktop` entry on Linux), alongside one shared Multi Codex folder holding `config.json`, the CLI, icons, and platform helper files.
+
+As you use each account, disk usage grows with that profile's own data: chats, settings, plugins, local databases, and app caches accumulate in its own folders. Profile 1 ("Primary") uses `~/.codex` and the official app's default desktop data folder, while additional profiles use separate `CODEX_HOME` and `--user-data-dir` folders (on macOS, an existing `~/.codex-work` and `~/Library/Application Support/Codex Second` setup is adopted for profile 2). By default, every profile's data stays isolated in its own folders.
+
+For sign-in and credentials, the launcher supplies per-profile data folders to the shared app and routes sign-in links, while the Codex app itself handles credential storage. Because Windows and Linux desktop launching is [experimental](#platform-support), multi-instance and `--user-data-dir` behavior can vary by package format on those platforms.
 
 ## Platform support
 
