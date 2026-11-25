@@ -168,7 +168,7 @@ Run `multi-codex-app share` to see what each app shares.
 | `multi-codex-app share` | Show which profiles share chats and memories |
 | `multi-codex-app share 2 all` | Share chats and memories in profile 2 (or `chats`, `memories`, `off`) |
 | `multi-codex-app share owner 3` | Make profile 3 hold the shared chats and memories |
-| `multi-codex-app update` | Install the newest release and keep your profiles |
+| `multi-codex-app update` | Install the newest Multi Codex release and keep your profiles |
 | `multi-codex-app doctor` | Check paths and login-link routing |
 | `multi-codex-app uninstall` | Remove the integration but keep your data |
 
@@ -186,6 +186,17 @@ Run `multi-codex-app share` to see what each app shares.
 - **Plain text.** Set `NO_COLOR=1` or `TERM=dumb` to turn off the wizard's colors.
 
 </details>
+
+## Updating Codex
+
+All profiles open the same installed official Codex desktop app. Each profile uses its own data folders.
+
+1. Update the official Codex app through its usual update process. If the app stays at the same path, each profile opens the updated installation the next time it launches.
+2. Quit any running profiles and reopen them from their launchers. On macOS, use Cmd+Q. Opening a launcher for a still-running profile can bring that instance to the front. Desktop launching on Windows and Linux is experimental.
+
+If the official app moves to a different path, rerun `multi-codex-app setup --count N --app /absolute/path/to/app` with your existing profile count.
+
+Use `multi-codex-app update` to install the latest published Multi Codex release. It refreshes the Multi Codex CLI and profile launchers while keeping your profile data folders. Use the official app's update process for Codex itself.
 
 ## Good to know
 
