@@ -189,32 +189,14 @@ Run `multi-codex-app share` to see what each app shares.
 
 ## Updating Codex
 
-Every profile launches the same installed official Codex desktop app (`appPath` in `config.json`), using separate data folders rather than a separate copy of the app:
+All profiles open the same installed official Codex desktop app. Each profile uses its own data folders.
 
-- **Profile 1** uses `~/.codex` (`CODEX_HOME`) and the desktop app's default data folder.
-- **Additional profiles** each use their own `CODEX_HOME` and `--user-data-dir` desktop data folder under `profiles/<id>/` (or, on macOS, adopt `~/.codex-work` and `~/Library/Application Support/Codex Second` for profile 2 when both already exist).
+1. Update the official Codex app through its usual update process. If the app stays at the same path, each profile opens the updated installation the next time it launches.
+2. Quit any running profiles and reopen them from their launchers. On macOS, use Cmd+Q. Opening a launcher for a still-running profile can bring that instance to the front. Desktop launching on Windows and Linux is experimental.
 
-Because all profiles use that one installation, **update the official Codex desktop app once** the way you normally do. Every profile uses that updated app without per-profile updates or re-running setup.
+If the official app moves to a different path, rerun `multi-codex-app setup --count N --app /absolute/path/to/app` with your existing profile count.
 
-### When to close and reopen profiles
-
-- **After updating the official Codex app:** closed profiles open the new version the next time you launch them. Profiles that are already open keep running the process started before the update until you quit and reopen them. On macOS, press ⌘Q in each open profile; closing a window leaves its process running, and opening its launcher or running `multi-codex-app launch ID` brings that existing process to the front instead of starting a new one. On Windows and Linux, desktop launching is experimental and instance reuse depends on your desktop app package, so close open profile windows before reopening them on the updated version.
-- **When running `multi-codex-app update`:** you don't need to close open Codex profiles. Running Codex sessions stay open; on macOS, only `Multi Codex Helper` restarts, and the Dock refreshes to pick up updated launchers and icons.
-
-### Official app updates vs `multi-codex-app update`
-
-| What you want to update | What to do | What changes |
-| --- | --- | --- |
-| Official Codex desktop app | Update the official Codex app once, then quit and reopen any running profiles | Updates the Codex app opened by every profile; profile folders, sign-ins, and launchers stay as they are |
-| Multi Codex integration | Run `multi-codex-app update` | Installs the latest published `multi-codex-app` GitHub release (CLI in `bin/`, icon files, profile launchers, and the `codex://` callback helper and registration) while keeping your saved profiles, names, icon colors, sign-ins, and data folders |
-
-Under the hood, `multi-codex-app update` downloads `install.sh` (macOS and Linux) or `install.ps1` (Windows), verifies the release archive's SHA-256 checksum, and runs `setup --count N` for your active profiles (using a detached `update-installer.ps1` process on Windows so `multi-codex-app.exe` can exit before replacement). On macOS that refreshes `Multi Codex Helper.app`, its LaunchAgent, `~/Applications` launchers, and Dock pins; on Windows it refreshes `chooser.ps1`, Start menu shortcuts, and `HKCU\Software\Classes\codex`; on Linux it refreshes `chooser.py`, desktop entries, and the `xdg-mime` handler.
-
-### After updating
-
-- **Moved app path.** If an update or reinstall changes where the official desktop app lives on disk, update the saved path with `multi-codex-app setup --count N --app /absolute/path/to/app`, using your profile count from `multi-codex-app list`.
-- **Login links.** On macOS, Codex claims `codex://` when it starts, and `Multi Codex Helper` reclaims it within about ten seconds. On Windows and Linux (experimental), if updating or opening the desktop app takes over `codex://`, run `multi-codex-app setup` again or select Multi Codex in Default Apps.
-- **Shared chats and memories.** On macOS and Linux, if any profile [shares chats or memories](#sharing-chats-and-memories), run `multi-codex-app doctor` after a Codex update to check the shared links and get the `multi-codex-app share` repair command if needed.
+Use `multi-codex-app update` to install the latest published Multi Codex release. It refreshes the Multi Codex CLI and profile launchers while keeping your profile data folders. Use the official app's update process for Codex itself.
 
 ## Good to know
 
